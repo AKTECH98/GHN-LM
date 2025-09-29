@@ -210,3 +210,7 @@ checkpoints/
 data/
 lmghn3/data/
 ghn3/
+logs/
+*.out
+*.err
+*.log
