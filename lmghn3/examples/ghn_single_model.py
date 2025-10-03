@@ -17,61 +17,28 @@ Example (use --debug 1 to perform additional sanity checks and print more inform
 import torch
 import torchvision
 from ppuda.config import init_config
-from ghn3 import from_pretrained, norm_check, Graph, Logger
-
+from CustomGHN3 import from_pretrained, norm_check, Graph, Logger
+from models import mini_gpt, GPTDecoderLM
 
 # 1. Predict parameters of a PyTorch model using one of the pretrained GHNs
-args = init_config(mode='eval', debug=0, arch='resnet50', split='torch')  # load arguments from the command line
-assert args.arch is not None, ('architecture must be specified using, e.g. --arch resnet50', args.arch)
 
-ghn = from_pretrained(args.ckpt, debug_level=args.debug).to(args.device)  # get a pretrained GHN
+ghn = from_pretrained("ghn3tm8.pt").to("cpu")  # get a pretrained GHN
 
-model = eval(f'torchvision.models.{args.arch}()').to(args.device)  # create a PyTorch model
+model = GPTDecoderLM(mini_gpt.GPTConfig(vocab_size=50257, max_seq_len=1024, n_layer=12, d_model=768, n_head=12, d_ff=3072, p_drop=0.1))
 model = ghn(model)  # predict parameters of the model
 
-if args.debug:
-    # optionally, check that the model is correctly predicted
-    norm_check(model, arch=args.arch, ghn3_name=args.ckpt)
-
-print('===Model %s can now be evaluated or fine-tuned on ImageNet or other dataset.===' % args.arch.upper())
-
-if args.device == 'cuda':
-    torch.cuda.empty_cache()
-
-# 2. Example of fine-tuning the PyTorch model
-n_steps = 10
-print('\nExample of fine-tuning the %s model for %d steps:' % (args.arch.upper(), n_steps))
-model.train()
-opt = torch.optim.SGD(model.parameters(), lr=0.1)
-logger = Logger(n_steps)
-
-# for batch in range(n_steps):
-#     opt.zero_grad()
-#     loss = model(torch.randn(2, 3, 224, 224).to(args.device)).abs().mean()  # some dummy loss
-#     loss.backward()
-#     total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
-#     opt.step()
-#     logger(batch, {'loss': loss.item(), 'grad norm': total_norm.item()})
-#
-# if args.device == 'cuda':
-#     torch.cuda.empty_cache()
-#
-# # 3. Example of fine-tuning the GHN on a single model
-# print('\nExample of fine-tuning the GHN for %d steps:' % n_steps)
-#
-model = eval(f'torchvision.models.{args.arch}()').to(args.device)
 graph = Graph(model)  # create a graph of the model once so that it can be reused for all training iterations
-# model.train()
-# ghn.train()
-# ghn.debug_level = 0  # disable debug checks and prints for every forward pass to ghn
-# opt = torch.optim.SGD(ghn.parameters(), lr=0.1)
-# logger = Logger(n_steps)
-# for batch in range(n_steps):
-#     opt.zero_grad()
-#     model = ghn(model, graph, keep_grads=True)  # keep gradients of predicted params to backprop to the ghn
-#     loss = model(torch.randn(2, 3, 224, 224).to(args.device)).abs().mean()  # some dummy loss
-#     loss.backward()
-#     total_ghn_norm = torch.nn.utils.clip_grad_norm_(ghn.parameters(), 5)
-#     opt.step()
-#     logger(batch, {'loss': loss.item(), 'grad norm': total_ghn_norm.item()})
-graph.visualize(remove_ve=True)
+model.train()
+ghn.train()
+ghn.debug_level = 0  # disable debug checks and prints for every forward pass to ghn
+opt = torch.optim.SGD(ghn.parameters(), lr=0.1)
+logger = Logger(10)
+for batch in range(10):
+    opt.zero_grad()
+    model = ghn(model, graph, keep_grads=True)  # keep gradients of predicted params to backprop to the ghn
+    logits, _ = model(torch.randint(0, 50257, (2, 512)).to("cpu"))  # get logits
+    loss = logits.abs().mean()  # some dummy loss
+    loss.backward()
+    total_ghn_norm = torch.nn.utils.clip_grad_norm_(ghn.parameters(), 5)
+    opt.step()
+    logger(batch, {'loss': loss.item(), 'grad norm': total_ghn_norm.item()})

@@ -214,3 +214,5 @@ logs/
 *.out
 *.err
 *.log
+runs/
+training_logs/
