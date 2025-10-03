@@ -57,9 +57,6 @@ SEQ_LEN=128                     # Sequence length
 LEARNING_RATE=0.001            # Learning rate
 WEIGHT_DECAY=0.01              # Weight decay
 DROPOUT=0.1                    # Dropout rate
-ATTN_DROP=0.1                  # Attention dropout rate
-OPTIMIZER="adamw"              # Optimizer: adam, adamw, sgd
-SCHEDULER="cosine"             # Scheduler: cosine, linear, constant, step
 DEVICE="cuda"                  # Device: cuda or cpu
 
 # ===========================================
@@ -77,9 +74,6 @@ echo "  Seq Len: $SEQ_LEN"
 echo "  Learning Rate: $LEARNING_RATE"
 echo "  Weight Decay: $WEIGHT_DECAY"
 echo "  Dropout: $DROPOUT"
-echo "  Attn Drop: $ATTN_DROP"
-echo "  Optimizer: $OPTIMIZER"
-echo "  Scheduler: $SCHEDULER"
 echo "  Device: $DEVICE"
 echo "================================"
 
@@ -95,9 +89,6 @@ python train_single_model.py \
     --learning_rate $LEARNING_RATE \
     --weight_decay $WEIGHT_DECAY \
     --dropout $DROPOUT \
-    --attn_drop $ATTN_DROP \
-    --optimizer $OPTIMIZER \
-    --scheduler $SCHEDULER \
     --device $DEVICE
 
 echo "Job finished at $(date)"
