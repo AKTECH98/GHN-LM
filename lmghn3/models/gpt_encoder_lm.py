@@ -9,6 +9,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import Union, Optional
 from .base import BaseConfig, BaseLanguageModel, EmbeddingLayer, LMHead
 
 
@@ -67,7 +68,7 @@ class GPTEncoderLayerLM(BaseLanguageModel):
         # Init (simple GPT-2-like)
         self.apply(self.init_weights)
 
-    def forward(self, x: torch.Tensor, targets: torch.Tensor | None = None, pad_mask: torch.Tensor | None = None):
+    def forward(self, x: torch.Tensor, targets: Optional[torch.Tensor] = None, pad_mask: Optional[torch.Tensor] = None):
         """
         x: (B, T) token ids
         targets: optional (B, T) with -100 as ignore_index
@@ -98,7 +99,7 @@ class GPTEncoderLayerLM(BaseLanguageModel):
         return logits, loss
 
     @torch.no_grad()
-    def generate(self, idx: torch.Tensor, max_new_tokens=50, temperature=1.0, top_k: int | None = None):
+    def generate(self, idx: torch.Tensor, max_new_tokens=50, temperature=1.0, top_k: Optional[int] = None):
         """
         Simple autoregressive sampler.
         idx: (B, T0) start tokens
