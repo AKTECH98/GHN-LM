@@ -4,14 +4,15 @@
 #SBATCH --partition=debug
 #SBATCH --comment="Language Model Training"
 #SBATCH --mail-user=slack:@ak3748       # Slack username to notify
+#SBATCH --mail-type=END
 #SBATCH --gres=gpu:a100:1
 #SBATCH --output=%x_%j.out
 #SBATCH --error=%x_%j.err
-#SBATCH --time=0-12:00:00
+#SBATCH --time=0-01:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=32g
+#SBATCH --mem=8g
 
 JOB_ID=${SLURM_JOB_ID:-local-$(date +%s)}
 NODE=${SLURMD_NODENAME:-$(hostname)}
@@ -47,13 +48,13 @@ export PYTHONPATH=$PYTHONPATH:./
 # TRAINING PARAMETERS - MODIFY AS NEEDED
 # ===========================================
 MODEL="mini_gpt"                    # Options: rnn, lstm, gru, gpt_encoder, mini_gpt
-EPOCHS=20                      # Number of training epochs
-BATCH_SIZE=16                   # Batch size
-D_MODEL=128                     # Model dimension
+EPOCHS=100                      # Number of training epochs
+BATCH_SIZE=32                   # Batch size
+D_MODEL=64                     # Model dimension
 N_LAYER=2                      # Number of layers
-N_HEAD=8                       # Number of attention heads (for transformers)
-D_FF=1024                      # Feed-forward dimension (for transformers)
-SEQ_LEN=128                     # Sequence length
+N_HEAD=4                       # Number of attention heads (for transformers)
+D_FF=256                      # Feed-forward dimension (for transformers)
+SEQ_LEN=64                     # Sequence length
 LEARNING_RATE=0.001            # Learning rate
 WEIGHT_DECAY=0.01              # Weight decay
 DROPOUT=0.1                    # Dropout rate
@@ -89,6 +90,7 @@ python train_single_model.py \
     --learning_rate $LEARNING_RATE \
     --weight_decay $WEIGHT_DECAY \
     --dropout $DROPOUT \
-    --device $DEVICE
+    --device $DEVICE \
+    --cache_dir "/tmp/wikitext_fixed_$(date +%s)"
 
 echo "Job finished at $(date)"
