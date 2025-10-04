@@ -32,7 +32,7 @@ from models import (
     GPTEncoderLayerLM, GPTEncoderConfig,
     GPTDecoderLM, MiniGPTConfig
 )
-from lmghn3.language_models.wikitext2_loader import build_wikitext2
+from lmghn3.Dataloader.wikitext2_loader import build_wikitext2
 from simple_logger import SimpleLogger
 
 
@@ -264,9 +264,16 @@ class ModelTrainer:
             self.scheduler.step()
             current_lr = self.optimizer.param_groups[0]['lr']
             
-            # Log metrics
-            self.logger.log_epoch(epoch, train_loss, val_loss, current_lr)
+            # Log epoch-level metrics to TensorBoard
+            self.writer.add_scalar('Epoch/Train_Loss', train_loss, epoch)
+            self.writer.add_scalar('Epoch/Val_Loss', val_loss, epoch)
             
+            # Calculate and log perplexity (exponential of loss)
+            train_perplexity = torch.exp(torch.tensor(train_loss))
+            val_perplexity = torch.exp(torch.tensor(val_loss))
+            self.writer.add_scalar('Epoch/Train_Perplexity', train_perplexity, epoch)
+            self.writer.add_scalar('Epoch/Val_Perplexity', val_perplexity, epoch)
+
             # Save checkpoint
             is_best = val_loss < self.best_val_loss
             if is_best:
@@ -287,9 +294,16 @@ class ModelTrainer:
         
         print(f"\n🎉 Training completed!")
         print(f"   Best validation loss: {self.best_val_loss:.4f}")
-        print(f"   Training data saved to: {self.logger.csv_file}")
-        print(f"   Config saved to: {self.logger.log_file}")
+        print(f"   Model config saved to: {self.logger.log_file}")
+        print(f"   TensorBoard logs saved to: logs/runs/{self.args.model}_{self.logger.timestamp}/")
         print(f"   Checkpoints saved to: checkpoints/{self.args.model}_{self.logger.timestamp}/")
+        print(f"\n📊 TensorBoard Metrics Available:")
+        print(f"   - Train/Loss: Batch-level training losses")
+        print(f"   - Val/Loss: Epoch-level validation losses")
+        print(f"   - Epoch/Train_Loss: Epoch-level training losses")
+        print(f"   - Epoch/Val_Loss: Epoch-level validation losses")
+        print(f"   - Epoch/Train_Perplexity: Training perplexity")
+        print(f"   - Epoch/Val_Perplexity: Validation perplexity")
         
         # Close tensorboard writer
         self.writer.close()

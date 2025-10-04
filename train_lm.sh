@@ -1,18 +1,16 @@
 #!/bin/bash -l
-#SBATCH --job-name=LM
+#SBATCH --job-name=lstm
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
 #SBATCH --comment="Language Model Training"
 #SBATCH --mail-user=slack:@ak3748       # Slack username to notify
 #SBATCH --mail-type=END
 #SBATCH --gres=gpu:a100:1
-#SBATCH --output=%x_%j.out
-#SBATCH --error=%x_%j.err
 #SBATCH --time=0-01:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=8g
+#SBATCH --mem=4g
 
 JOB_ID=${SLURM_JOB_ID:-local-$(date +%s)}
 NODE=${SLURMD_NODENAME:-$(hostname)}
@@ -47,17 +45,15 @@ export PYTHONPATH=$PYTHONPATH:./
 # ===========================================
 # TRAINING PARAMETERS - MODIFY AS NEEDED
 # ===========================================
-MODEL="mini_gpt"                    # Options: rnn, lstm, gru, gpt_encoder, mini_gpt
-EPOCHS=100                      # Number of training epochs
-BATCH_SIZE=32                   # Batch size
-D_MODEL=64                     # Model dimension
+MODEL="lstm"                    # Options: rnn, lstm, gru, gpt_encoder, mini_gpt
+EPOCHS=20                      # Number of training epochs
+BATCH_SIZE=64                   # Batch size
+D_MODEL=128                     # Model dimension
 N_LAYER=2                      # Number of layers
-N_HEAD=4                       # Number of attention heads (for transformers)
-D_FF=256                      # Feed-forward dimension (for transformers)
-SEQ_LEN=64                     # Sequence length
-LEARNING_RATE=0.001            # Learning rate
-WEIGHT_DECAY=0.01              # Weight decay
-DROPOUT=0.1                    # Dropout rate
+N_HEAD=8                       # Number of attention heads (for transformers)
+D_FF=2048                      # Feed-forward dimension (for transformers)
+SEQ_LEN=128                     # Sequence length
+LEARNING_RATE=0.001           # Learning rate
 DEVICE="cuda"                  # Device: cuda or cpu
 
 # ===========================================
@@ -73,8 +69,6 @@ echo "  N Head: $N_HEAD"
 echo "  D FF: $D_FF"
 echo "  Seq Len: $SEQ_LEN"
 echo "  Learning Rate: $LEARNING_RATE"
-echo "  Weight Decay: $WEIGHT_DECAY"
-echo "  Dropout: $DROPOUT"
 echo "  Device: $DEVICE"
 echo "================================"
 
@@ -88,8 +82,6 @@ python train_single_model.py \
     --d_ff $D_FF \
     --seq_len $SEQ_LEN \
     --learning_rate $LEARNING_RATE \
-    --weight_decay $WEIGHT_DECAY \
-    --dropout $DROPOUT \
     --device $DEVICE \
     --cache_dir "/tmp/wikitext_fixed_$(date +%s)"
 
