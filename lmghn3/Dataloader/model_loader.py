@@ -225,39 +225,22 @@ class ModelConfigGenerator:
         """Generate ALL possible model configurations."""
         all_configs = []
         
-        print("Generating RNN configurations...")
         rnn_configs = self.generate_rnn_configs()
         all_configs.extend(rnn_configs)
-        print(f"  Generated {len(rnn_configs)} RNN configurations")
-        
-        print("Generating LSTM configurations...")
         lstm_configs = self.generate_lstm_configs()
         all_configs.extend(lstm_configs)
-        print(f"  Generated {len(lstm_configs)} LSTM configurations")
-        
-        print("Generating GRU configurations...")
         gru_configs = self.generate_gru_configs()
         all_configs.extend(gru_configs)
-        print(f"  Generated {len(gru_configs)} GRU configurations")
-        
-        print("Generating GPT Encoder configurations...")
         gpt_encoder_configs = self.generate_gpt_encoder_configs()
         all_configs.extend(gpt_encoder_configs)
-        print(f"  Generated {len(gpt_encoder_configs)} GPT Encoder configurations")
-        
-        print("Generating Mini GPT configurations...")
         mini_gpt_configs = self.generate_mini_gpt_configs()
         all_configs.extend(mini_gpt_configs)
-        print(f"  Generated {len(mini_gpt_configs)} Mini GPT configurations")
-        
-        print(f"Total configurations generated: {len(all_configs)}")
         return all_configs
     
     def generate_reasonable_configs(self) -> List[Dict]:
         """Generate a reasonable subset of configurations for practical use."""
         all_configs = []
         
-        print("Generating reasonable subset of configurations...")
         
         # For RNN/LSTM/GRU: Use a subset of parameters
         rnn_d_models = [64, 128, 256, 384, 512, 768, 1024]
@@ -317,7 +300,6 @@ class ModelConfigGenerator:
                                     all_configs.append(config)
                                     config_id += 1
         
-        print(f"Generated {len(all_configs)} reasonable configurations")
         return all_configs
 
 
@@ -470,108 +452,6 @@ def create_full_model_dataloader(
     )
 
 
-def print_model_summary(configs: List[Dict]):
-    """Print a summary of generated model configurations."""
-    print("=" * 80)
-    print("MODEL CONFIGURATION SUMMARY")
-    print("=" * 80)
-    print(f"Total configurations: {len(configs)}")
-    print()
-    
-    # Group by model type
-    by_type = {}
-    for config in configs:
-        model_type = config["model_type"]
-        if model_type not in by_type:
-            by_type[model_type] = []
-        by_type[model_type].append(config)
-    
-    for model_type, type_configs in by_type.items():
-        print(f"{model_type.upper()} MODELS ({len(type_configs)} variants):")
-        print("-" * 60)
-        
-        # Show parameter ranges
-        d_models = sorted(set(c["d_model"] for c in type_configs))
-        n_layers = sorted(set(c["n_layer"] for c in type_configs))
-        
-        print(f"  Hidden dimensions: {d_models}")
-        print(f"  Layer counts: {n_layers}")
-        
-        if "n_head" in type_configs[0]:
-            n_heads = sorted(set(c["n_head"] for c in type_configs))
-            print(f"  Attention heads: {n_heads}")
-        
-        print()
-    
-    # Parameter statistics
-    print("PARAMETER STATISTICS:")
-    print("-" * 30)
-    
-    # Estimate parameters for each config
-    total_params = 0
-    param_counts = []
-    
-    for config in configs:
-        # Rough parameter estimation
-        vocab_size = config["vocab_size"]
-        d_model = config["d_model"]
-        n_layer = config["n_layer"]
-        
-        # Token embedding
-        token_emb = vocab_size * d_model
-        # Position embedding
-        pos_emb = config["max_seq_len"] * d_model
-        
-        if config["model_type"] in ["rnn", "lstm", "gru"]:
-            # RNN-based models
-            layer_params = n_layer * (4 * d_model * d_model)  # Rough estimate
-        else:
-            # Transformer models
-            n_heads = config.get("n_head", 8)
-            d_ff = config.get("d_ff", d_model * 4)
-            layer_params = n_layer * (
-                4 * d_model * d_model +  # Attention
-                2 * d_model * d_ff +     # MLP
-                2 * d_model             # Layer norms
-            )
-        
-        total_model_params = token_emb + pos_emb + layer_params
-        param_counts.append(total_model_params)
-        total_params += total_model_params
-    
-    if param_counts:
-        avg_params = total_params // len(param_counts)
-        min_params = min(param_counts)
-        max_params = max(param_counts)
-        
-        print(f"  Total parameters across all models: {total_params:,}")
-        print(f"  Average parameters per model: {avg_params:,}")
-        print(f"  Smallest model: {min_params:,} parameters")
-        print(f"  Largest model: {max_params:,} parameters")
-    
-    print()
-    print("=" * 80)
 
 
-if __name__ == "__main__":
-    # Example usage
-    dataloader, configs = create_model_dataloader(
-        batch_size=2,
-        rnn_configs=5,
-        lstm_configs=5,
-        gru_configs=5,
-        gpt_encoder_configs=10,
-        mini_gpt_configs=10
-    )
-    
-    print_model_summary(configs)
-    
-    # Test the dataloader
-    print("\nTesting dataloader...")
-    for i, (models, metadatas) in enumerate(dataloader):
-        print(f"Batch {i+1}: {len(models)} models")
-        for j, (model, metadata) in enumerate(zip(models, metadatas)):
-            print(f"  Model {j+1}: {metadata['name']} ({metadata['num_params']:,} params)")
-        if i >= 2:  # Only show first 3 batches
-            break
 
