@@ -266,7 +266,7 @@ class Trainer:
             self._model.train()
 
         try:
-            with torch.amp.autocast('cuda' if torch.cuda.is_available() else 'cpu', enabled=self.amp):
+            with torch.cuda.amp.autocast(enabled=self.amp):
 
                 if self._is_ghn:
                     # Predict parameters
@@ -433,7 +433,7 @@ class Trainer:
                       f'using the --ckpt argument.'
                 raise RuntimeError(msg)
 
-            return
+            return loss_
 
         logits = []
         loss = 0
@@ -445,7 +445,7 @@ class Trainer:
             self._model.train()
 
         try:
-            with torch.amp.autocast('cuda' if torch.cuda.is_available() else 'cpu', enabled=self.amp):
+            with torch.cuda.amp.autocast(enabled=self.amp):
 
                 if self._is_ghn:
                     # Predict parameters for language models
@@ -493,11 +493,27 @@ class Trainer:
                 for model in predicted_models:
                     try:
                         # Forward pass through the language model
-                        logits_model = model(input_ids)
+                        output = model(input_ids)
+                        # Extract logits from the output (model returns (logits, loss) tuple)
+                        if isinstance(output, tuple):
+                            logits_model = output[0]  # Extract logits
+                        else:
+                            logits_model = output
+                        
                         # Language modeling loss (next token prediction)
-                        loss += F.cross_entropy(logits_model.view(-1, logits_model.size(-1)), 
-                                              labels.view(-1), 
-                                              ignore_index=-100)
+                        model_loss = F.cross_entropy(logits_model.view(-1, logits_model.size(-1)), 
+                                                   labels.view(-1), 
+                                                   ignore_index=-100)
+                        
+                        # Check for NaN loss (edge case: all labels are -100)
+                        if torch.isnan(model_loss):
+                            print(f"Warning: NaN loss detected at step {self._step} for model {type(model).__name__}")
+                            print(f"  Valid targets: {(labels != -100).sum().item()}")
+                            print(f"  Total targets: {labels.numel()}")
+                            # Skip this model's loss contribution
+                            continue
+                        
+                        loss += model_loss
                         logits.append(logits_model.detach())
                     except Exception as e:
                         print(f"Error in model forward pass: {e}")
@@ -505,7 +521,13 @@ class Trainer:
                         raise
 
                 # Average loss across models
-                loss = loss / len(predicted_models)
+                if len(logits) > 0:  # Only if we have valid models
+                    loss = loss / len(logits)
+                else:
+                    # All models produced NaN loss - skip this batch
+                    print(f"Warning: All models produced NaN loss at step {self._step}")
+                    print(f"  Skipping this batch")
+                    return None
 
             if loss_predwd is not None:
                 loss += loss_predwd
@@ -569,9 +591,18 @@ class Trainer:
             if len(logits) > 0:
                 # Calculate perplexity as a metric
                 avg_logits = torch.stack(logits).mean(0)  # Average logits across models
-                perplexity = torch.exp(F.cross_entropy(avg_logits.view(-1, avg_logits.size(-1)), 
-                                                      labels.view(-1), 
-                                                      ignore_index=-100))
+                perplexity_loss = F.cross_entropy(avg_logits.view(-1, avg_logits.size(-1)), 
+                                                 labels.view(-1), 
+                                                 ignore_index=-100)
+                
+                # Check for NaN perplexity (edge case: all labels are -100)
+                if torch.isnan(perplexity_loss):
+                    print(f"Warning: NaN perplexity loss detected at step {self._step}")
+                    print(f"  Valid targets: {(labels != -100).sum().item()}")
+                    print(f"  Total targets: {labels.numel()}")
+                    perplexity = torch.tensor(float('inf'))  # Use infinity for NaN perplexity
+                else:
+                    perplexity = torch.exp(perplexity_loss)
                 
                 n = len(labels.view(-1))
                 self.metrics['loss'].update((loss_avg if self.ddp else loss).item(), n)

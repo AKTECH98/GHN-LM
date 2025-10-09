@@ -129,6 +129,14 @@ class ModelTrainer:
                 
                 loss = self.criterion(logits.view(-1, logits.size(-1)), labels.view(-1))
             
+            # Check for NaN loss (edge case: all labels are -100)
+            if torch.isnan(loss):
+                print(f"Warning: NaN loss detected at batch {batch_idx} in epoch {epoch+1}")
+                print(f"  Valid targets: {(labels != -100).sum().item()}")
+                print(f"  Total targets: {labels.numel()}")
+                print(f"  Skipping this batch")
+                continue
+            
             # Backward pass
             loss.backward()
             
@@ -269,8 +277,19 @@ class ModelTrainer:
             self.writer.add_scalar('Epoch/Val_Loss', val_loss, epoch)
             
             # Calculate and log perplexity (exponential of loss)
-            train_perplexity = torch.exp(torch.tensor(train_loss))
-            val_perplexity = torch.exp(torch.tensor(val_loss))
+            # Check for NaN losses before calculating perplexity
+            if torch.isnan(torch.tensor(train_loss)):
+                print(f"Warning: NaN train loss detected at epoch {epoch+1}")
+                train_perplexity = torch.tensor(float('inf'))
+            else:
+                train_perplexity = torch.exp(torch.tensor(train_loss))
+            
+            if torch.isnan(torch.tensor(val_loss)):
+                print(f"Warning: NaN validation loss detected at epoch {epoch+1}")
+                val_perplexity = torch.tensor(float('inf'))
+            else:
+                val_perplexity = torch.exp(torch.tensor(val_loss))
+            
             self.writer.add_scalar('Epoch/Train_Perplexity', train_perplexity, epoch)
             self.writer.add_scalar('Epoch/Val_Perplexity', val_perplexity, epoch)
 

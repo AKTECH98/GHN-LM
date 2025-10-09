@@ -1,12 +1,13 @@
 """
-Graph adapter for language models to work with GHN.
-This module adapts language model architectures to the graph format expected by GHN.
+Language Model Wrapper for GHN compatibility.
+
+This module provides the LanguageModelWrapper class that makes language models
+compatible with GHN's graph representation by filtering parameters and handling
+tied weights properly.
 """
 
 import torch
 import torch.nn as nn
-from typing import List, Dict, Any, Optional
-from .graph import Graph, GraphBatch
 
 
 class LanguageModelWrapper:
@@ -107,44 +108,3 @@ class LanguageModelWrapper:
         setattr(obj, parts[-1], value)
 
 
-def create_language_model_graphs(models, metadatas):
-    """Create graph representations for language models using the proper Graph class."""
-    if not isinstance(models, list):
-        models = [models]
-    if not isinstance(metadatas, list):
-        metadatas = [metadatas]
-
-    # Create individual graphs using the proper Graph class
-    graphs = []
-    wrapped_models = []  # Store wrapped models
-    failed_models = []
-
-    for model, metadata in zip(models, metadatas):
-        try:
-            # Wrap the model to filter out non-tensor parameters
-            wrapped_model = LanguageModelWrapper(model)
-            
-            # Create a graph from the wrapped model using the existing Graph class
-            graph = Graph(wrapped_model)
-            graphs.append(graph)
-            wrapped_models.append(wrapped_model)  # Store the wrapped model
-        except Exception as e:
-            failed_models.append({
-                'name': metadata.get('name', 'unknown'),
-                'type': metadata.get('model_type', 'unknown'),
-                'error': str(e)
-            })
-            continue
-
-    if not graphs:
-        raise ValueError("No valid graphs could be created from the models")
-
-    # Create GraphBatch with proper nets and net_args
-    graph_batch = GraphBatch(graphs, dense=True)
-
-    # CRITICAL FIX: Add the WRAPPED models as nets so the trainer can use them directly
-    # For language models, we'll process one model at a time to avoid batch size issues
-    graph_batch.nets = wrapped_models  # The wrapped model objects (not original)
-    graph_batch.net_args = []  # Empty list since we're using nets directly
-
-    return graph_batch
