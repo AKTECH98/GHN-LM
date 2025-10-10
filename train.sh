@@ -5,12 +5,12 @@
 #SBATCH --comment="GHN-3 Language Model Training"
 #SBATCH --mail-user=slack:@ak3748       # Slack username to notify
 #SBATCH --mail-type=END
-#SBATCH --gres=gpu:a100:1
+#SBATCH --gres=gpu:a100:2
 #SBATCH --time=0-02:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=8g
+#SBATCH --mem=64g
 
 # ===========================================
 # GHN-3 Language Model Training Script
@@ -67,17 +67,17 @@ export PYTHONPATH=$PYTHONPATH:./
 # GHN-3 TRAINING PARAMETERS - MODIFY AS NEEDED
 # ===========================================
 EXPERIMENT_NAME="ghn3-lm"      # Experiment name
-EPOCHS=50                      # Number of training epochs
-BATCH_SIZE=4                   # Batch size for language models
-META_BATCH_SIZE=8              # Number of models per meta-batch
+EPOCHS=10                      # Number of training epochs
+BATCH_SIZE=2                  # Batch size for language models
+META_BATCH_SIZE=2              # Number of models per meta-batch
 LEARNING_RATE=1e-4             # Learning rate
 WEIGHT_DECAY=1e-2              # Weight decay
 GRAD_CLIP=1.0                  # Gradient clipping
-GHN_HID=64                     # GHN hidden dimension
-GHN_LAYERS=3                   # Number of GHN layers
-GHN_HEADS=8                    # Number of attention heads in GHN
-MAX_SEQ_LEN=512                # Maximum sequence length
-VOCAB_SIZE=50257               # Vocabulary size (auto-detected from tokenizer)
+GHN_HID=8                     # GHN hidden dimension
+GHN_LAYERS=1                   # Number of GHN layers
+GHN_HEADS=2                    # Number of attention heads in GHN
+MAX_SEQ_LEN=32                # Maximum sequence length
+VOCAB_SIZE=1000               # Vocabulary size (auto-detected from tokenizer)
 USE_ALL_CONFIGS=false          # Use full dataset (3M+ configs) or reasonable (~17K)
 HYPERNET="gatedgnn"            # Hypernetwork type: gatedgnn, gnn
 DECODER="conv"                 # Decoder type: conv, mlp

@@ -238,43 +238,21 @@ class ModelConfigGenerator:
         return all_configs
     
     def generate_reasonable_configs(self) -> List[Dict]:
-        """Generate a reasonable subset of configurations for practical use."""
+        """Generate a reasonable subset of configurations for practical use (Transformer models only)."""
         all_configs = []
         
+        # Skip RNN/LSTM/GRU models to reduce memory usage
+        # Only use Transformer models: GPT Encoder and Mini GPT
         
-        # For RNN/LSTM/GRU: Use a subset of parameters
-        rnn_d_models = [64, 128, 256, 384, 512, 768, 1024]
-        rnn_n_layers = [1, 2, 3, 4, 6, 8, 12, 16]
-        rnn_dropouts = [0.0, 0.1, 0.2, 0.3]
-        rnn_tie_weights = [True, False]
+        # For Transformer models: Use a smaller subset of parameters to reduce memory
+        transformer_d_models = [64, 128, 256, 384, 512]  # Reduced from 7 to 5
+        transformer_n_layers = [2, 3, 4, 6, 8]  # Reduced from 8 to 5
+        transformer_n_heads = [2, 4, 6, 8]  # Reduced from 6 to 4
+        transformer_d_ff_ratios = [2, 3, 4]  # Reduced from 5 to 3
+        transformer_dropouts = [0.0, 0.1, 0.2]  # Keep same
+        transformer_tie_weights = [True, False]  # Keep same
         
         config_id = 1
-        for model_type in ["rnn", "lstm", "gru"]:
-            for d_model in rnn_d_models:
-                for n_layer in rnn_n_layers:
-                    for dropout in rnn_dropouts:
-                        for tie_weights in rnn_tie_weights:
-                            config = {
-                                "model_type": model_type,
-                                "name": f"{model_type}-{config_id:03d}-{d_model}d-{n_layer}L-d{dropout:.1f}-t{tie_weights}",
-                                "vocab_size": self.vocab_size,
-                                "d_model": d_model,
-                                "n_layer": n_layer,
-                                "max_seq_len": self.max_seq_len,
-                                "p_drop": dropout,
-                                "tie_weights": tie_weights
-                            }
-                            all_configs.append(config)
-                            config_id += 1
-        
-        # For Transformer models: Use a subset of parameters
-        transformer_d_models = [64, 128, 256, 384, 512, 768, 1024]
-        transformer_n_layers = [2, 3, 4, 6, 8, 12, 16, 24]
-        transformer_n_heads = [2, 4, 6, 8, 12, 16]
-        transformer_d_ff_ratios = [2, 3, 4, 6, 8]
-        transformer_dropouts = [0.0, 0.1, 0.2]
-        transformer_tie_weights = [True, False]
-        
         for model_type in ["gpt_encoder", "mini_gpt"]:
             for d_model in transformer_d_models:
                 for n_layer in transformer_n_layers:
@@ -304,17 +282,28 @@ class ModelConfigGenerator:
 
 
 class ModelDataset(Dataset):
-    """Dataset that creates models from configurations."""
+    """Dataset that creates models from configurations with lazy loading."""
     
-    def __init__(self, configs: List[Dict], device: Optional[str] = None):
+    def __init__(self, configs: List[Dict], device: Optional[str] = None, lazy: bool = True):
         self.configs = configs
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.lazy = lazy
+        
+        # For lazy loading, we don't pre-create models
+        if not lazy:
+            # Pre-create all models (memory intensive)
+            self.models = []
+            self.metadatas = []
+            for i in range(len(configs)):
+                model, metadata = self._create_model(i)
+                self.models.append(model)
+                self.metadatas.append(metadata)
     
     def __len__(self) -> int:
         return len(self.configs)
     
-    def __getitem__(self, idx: int) -> Tuple[torch.nn.Module, Dict]:
-        """Create and return a model with its configuration."""
+    def _create_model(self, idx: int) -> Tuple[torch.nn.Module, Dict]:
+        """Create a model from configuration."""
         config = self.configs[idx].copy()
         model_type = config.pop("model_type")
         name = config.pop("name")
@@ -350,6 +339,15 @@ class ModelDataset(Dataset):
         }
         
         return model, metadata
+    
+    def __getitem__(self, idx: int) -> Tuple[torch.nn.Module, Dict]:
+        """Get a model with its configuration (lazy loading)."""
+        if self.lazy:
+            # Create model on-demand
+            return self._create_model(idx)
+        else:
+            # Return pre-created model
+            return self.models[idx], self.metadatas[idx]
 
 
 def create_model_dataloader(
@@ -359,7 +357,8 @@ def create_model_dataloader(
     num_workers: int = 0,
     device: Optional[str] = None,
     seed: int = 42,
-    use_all_configs: bool = False
+    use_all_configs: bool = False,
+    lazy: bool = True
 ) -> Tuple[DataLoader, List[Dict]]:
     """
     Create a DataLoader with model configurations.
@@ -367,6 +366,7 @@ def create_model_dataloader(
     Args:
         use_all_configs: If True, generates ALL possible configurations (3M+).
                         If False, generates a reasonable subset (~10K).
+        lazy: If True, use lazy loading (create models on-demand). If False, pre-create all models.
     
     Returns:
         DataLoader: Loader that yields (model, metadata) pairs
@@ -380,8 +380,8 @@ def create_model_dataloader(
     else:
         configs = generator.generate_reasonable_configs()
     
-    # Create dataset
-    dataset = ModelDataset(configs, device)
+    # Create dataset with lazy loading by default
+    dataset = ModelDataset(configs, device, lazy=lazy)
     
     # Create dataloader
     def collate_fn(batch):
@@ -406,10 +406,11 @@ def create_reasonable_model_dataloader(
     batch_size: int = 4,
     num_workers: int = 0,
     device: Optional[str] = None,
-    seed: int = 42
+    seed: int = 42,
+    lazy: bool = True
 ) -> Tuple[DataLoader, List[Dict]]:
     """
-    Create a DataLoader with a reasonable subset of model configurations (~10K).
+    Create a DataLoader with a reasonable subset of model configurations (Transformer models only, ~1.8K).
     
     Returns:
         DataLoader: Loader that yields (model, metadata) pairs
@@ -422,7 +423,8 @@ def create_reasonable_model_dataloader(
         num_workers=num_workers,
         device=device,
         seed=seed,
-        use_all_configs=False
+        use_all_configs=False,
+        lazy=lazy
     )
 
 
@@ -432,7 +434,8 @@ def create_full_model_dataloader(
     batch_size: int = 4,
     num_workers: int = 0,
     device: Optional[str] = None,
-    seed: int = 42
+    seed: int = 42,
+    lazy: bool = True
 ) -> Tuple[DataLoader, List[Dict]]:
     """
     Create a DataLoader with ALL possible model configurations (3M+).
@@ -448,7 +451,8 @@ def create_full_model_dataloader(
         num_workers=num_workers,
         device=device,
         seed=seed,
-        use_all_configs=True
+        use_all_configs=True,
+        lazy=lazy
     )
 
 

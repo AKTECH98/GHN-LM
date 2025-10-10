@@ -26,6 +26,7 @@ import sys
 import torch
 import numpy as np
 from datetime import datetime
+from torch.utils.tensorboard import SummaryWriter
 
 # Add paths
 sys.path.append('.')
@@ -212,7 +213,7 @@ class LanguageModelTrainer:
         
         # For language models, max_shape should be (vocab_size, 4*hidden_size, 1, 1)
         # This accounts for the largest possible parameter tensors in language models
-        max_shape = (max_vocab, 4 * max_hidden, 1, 1)  # (vocab_size, 4*hidden_size, 1, 1)
+        max_shape = (4*max_hidden, 4 * max_hidden, 1, 1)  # (vocab_size, 4*hidden_size, 1, 1)
         
         log(f'Max hidden size found: {max_hidden}')
         log(f'Vocab size: {max_vocab}')
@@ -327,9 +328,13 @@ class LanguageModelTrainer:
                 if step % self.args.log_interval == 0:
                     global_step = epoch * len(self.data_config['train_loader']) + step
                     if metrics and 'loss' in metrics:
-                        self.writer.add_scalar('Train/Loss', metrics['loss'], global_step)
-                    if metrics and 'perplexity' in metrics:
-                        self.writer.add_scalar('Train/Perplexity', metrics['perplexity'], global_step)
+                        # Extract scalar value from AvgrageMeter
+                        loss_value = metrics['loss'].avg if hasattr(metrics['loss'], 'avg') else metrics['loss']
+                        self.writer.add_scalar('Train/Loss', loss_value, global_step)
+                    if metrics and 'top1' in metrics:
+                        # top1 stores perplexity for language models
+                        perplexity_value = metrics['top1'].avg if hasattr(metrics['top1'], 'avg') else metrics['top1']
+                        self.writer.add_scalar('Train/Perplexity', perplexity_value, global_step)
                     
                     # Log learning rate
                     if hasattr(self.trainer, 'optimizer') and self.trainer.optimizer is not None:
