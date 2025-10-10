@@ -211,6 +211,8 @@ data/
 lmghn3/data/
 ghn3/
 logs/
+runs/
+Test/
 *.out
 *.err
 *.log

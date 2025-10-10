@@ -39,8 +39,14 @@ def _group_texts(examples, block_size: int):
         k: [t[i : i + block_size] for i in range(0, total_len, block_size)]
         for k, t in concatenated.items()
     }
-    # Labels are next-token prediction targets (shift handled in model loss if using standard LM heads)
-    result["labels"] = result["input_ids"].copy()
+    # Labels are next-token prediction targets (shift by 1 position)
+    labels = []
+    for input_ids in result["input_ids"]:
+        # Shift labels by 1 position: labels[i] = input_ids[i+1]
+        # Last position gets -100 (ignore index)
+        label_seq = input_ids[1:] + [-100]
+        labels.append(label_seq)
+    result["labels"] = labels
     return result
 
 
