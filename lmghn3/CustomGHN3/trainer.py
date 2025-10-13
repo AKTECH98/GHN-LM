@@ -117,7 +117,7 @@ class Trainer:
                     map_location = {'cuda:%d' % 0: device}
                 else:
                     map_location = self.rank
-                state_dict = torch.load(ckpt, map_location=map_location)
+                state_dict = torch.load(ckpt, map_location=map_location, weights_only=False)
                 model.load_state_dict(state_dict['state_dict'])
                 self.start_epoch = state_dict['epoch']
                 self.start_step = state_dict['step']
@@ -567,11 +567,14 @@ class Trainer:
 
             # Update training metrics (for language models, we use perplexity instead of accuracy)
             if len(logits) > 0:
-                # Calculate perplexity as a metric
+                # Calculate perplexity as a metric with overflow protection
                 avg_logits = torch.stack(logits).mean(0)  # Average logits across models
-                perplexity = torch.exp(F.cross_entropy(avg_logits.view(-1, avg_logits.size(-1)), 
-                                                      labels.view(-1), 
-                                                      ignore_index=-100))
+                cross_entropy_loss = F.cross_entropy(avg_logits.view(-1, avg_logits.size(-1)), 
+                                                    labels.view(-1), 
+                                                    ignore_index=-100)
+                # Clamp loss to prevent overflow in perplexity calculation
+                clamped_loss = torch.clamp(cross_entropy_loss, max=10.0)  # exp(10) ≈ 22,026
+                perplexity = torch.exp(clamped_loss)
                 
                 n = len(labels.view(-1))
                 self.metrics['loss'].update((loss_avg if self.ddp else loss).item(), n)

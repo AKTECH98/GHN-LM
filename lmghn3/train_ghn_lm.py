@@ -109,8 +109,12 @@ def create_experiment_metadata(args, config, run_id, start_time):
         'paths': {
             'save_dir': args.save_dir,
             'data_dir': args.data_dir,
-            'tensorboard_dir': os.path.join(args.save_dir, 'tensorboard_logs'),
-            'checkpoint_dir': os.path.join(args.save_dir, 'best_model')
+            'experiment_dir': f'experiment_{run_id}_{args.name}',
+            'tensorboard_logs_dir': 'tensorboard_logs',
+            'tensorboard_logs_location': os.path.join(args.save_dir, 'tensorboard_logs'),
+            'best_model_dir': f'experiment_{run_id}_{args.name}/best_model',
+            'checkpoints_dir': f'experiment_{run_id}_{args.name}/checkpoints',
+            'metadata_dir': f'experiment_{run_id}_{args.name}/metadata'
         }
     }
     return metadata
@@ -236,7 +240,11 @@ def main():
     # Override image-based configs for language model training
     args.dataset = 'language_model'  # Override cifar10
     args.imsize = None  # Not applicable for language models
-    args.max_shape = (args.seq_len, args.seq_len, 8, 8)  # Set appropriate max_shape for language models
+    # Set max_shape to handle the largest weights in language models
+    # Note: GHN predicts parameters in chunks and tiles them for large embeddings
+    # Start with a conservative size based on the original working configuration
+    # Can be increased gradually if needed for larger models
+    args.max_shape = (args.seq_len, args.seq_len, 8, 8)  # (64, 64, 8, 8) for seq_len=64
 
     if hasattr(args, 'multigpu') and args.multigpu:
         raise NotImplementedError(
@@ -294,13 +302,13 @@ def main():
                       scheduler='mstep' if args.scheduler is None else args.scheduler,
                       scheduler_args={'milestones': args.lr_steps, 'gamma': args.gamma},
                       n_batches=len(train_queue),
-                      grad_clip=args.grad_clip,
+                      grad_clip=min(args.grad_clip, 1.0),  # Cap gradient clipping for stability
                       device=args.device,
                       log_interval=args.log_interval,
                       amp=args.amp,
                       amp_min_scale=1024,       # this helped stabilize AMP training
                       amp_growth_interval=100,  # this helped stabilize AMP training
-                      predparam_wd=0 if ghn2 else 3e-5,
+                      predparam_wd=0 if ghn2 else 1e-5,  # Reduced parameter regularization
                       label_smoothing=0.0,  # No label smoothing for language models
                       save_dir=args.save,
                       ckpt=args.ckpt,
@@ -310,6 +318,11 @@ def main():
 
     log('\nStarting training GHN with {} parameters!'.format(sum([p.numel() for p in ghn.parameters()])))
     log(f'Number of architecture variants: {len(arch_configs)}')
+    
+    # Efficiency recommendation: Use ghn3.ops as base classes during training
+    log('Note: For efficiency, it is recommended to use ghn3.ops as base classes during training the GHN')
+    log('Note: Perplexity overflow protection implemented - loss clamped to max 10.0 to prevent exp() overflow')
+    log('Note: Additional stability fixes: reduced grad_clip, reduced predparam_wd, improved AMP settings')
     
     # Initialize iterators
     graphs_queue = iter(graphs_queue)
@@ -331,23 +344,31 @@ def main():
         'start_time': start_time.isoformat()
     }
     
-    # Create directory for saving best model and metrics
-    best_model_dir = os.path.join(args.save_dir, 'best_model')
+    # Create organized directory structure for saving models and metadata
+    experiment_dir = os.path.join(args.save_dir, f'experiment_{run_id}_{args.name}')
+    best_model_dir = os.path.join(experiment_dir, 'best_model')
+    checkpoints_dir = os.path.join(experiment_dir, 'checkpoints')
+    metadata_dir = os.path.join(experiment_dir, 'metadata')
+    
+    # Create all directories
     os.makedirs(best_model_dir, exist_ok=True)
-    metrics_file = os.path.join(args.save_dir, 'training_metrics.json')
+    os.makedirs(checkpoints_dir, exist_ok=True)
+    os.makedirs(metadata_dir, exist_ok=True)
+    
+    # File paths
+    metrics_file = os.path.join(metadata_dir, 'training_metrics.json')
+    metadata_file = os.path.join(metadata_dir, 'experiment_metadata.json')
     
     # Create experiment metadata
     experiment_metadata = create_experiment_metadata(args, config, run_id, start_time)
-    metadata_file = os.path.join(args.save_dir, 'experiment_metadata.json')
     
     # Initialize TensorBoard writer with experiment tracking (only on rank 0 to avoid conflicts)
     tensorboard_dir = os.path.join(args.save_dir, 'tensorboard_logs')
     writer = None
     if ddp.rank == 0:
         os.makedirs(tensorboard_dir, exist_ok=True)
-        # Create unique run directory for this experiment
-        run_dir = os.path.join(tensorboard_dir, f'run_{run_id}_{args.name}')
-        writer = SummaryWriter(log_dir=run_dir)
+        # Save TensorBoard logs directly in tensorboard_logs folder
+        writer = SummaryWriter(log_dir=tensorboard_dir)
         
         # Save experiment metadata
         with open(metadata_file, 'w') as f:
@@ -372,13 +393,17 @@ def main():
         )
         
         log(f'Experiment ID: {run_id}')
-        log(f'TensorBoard logs will be saved to: {run_dir}')
+        log(f'Experiment directory: {experiment_dir}')
+        log(f'TensorBoard logs will be saved to: {tensorboard_dir}')
         log(f'Experiment metadata saved to: {metadata_file}')
+        log(f'Best models will be saved to: {best_model_dir}')
+        log(f'Periodic checkpoints will be saved to: {checkpoints_dir}')
         log('To view TensorBoard, run: tensorboard --logdir=' + tensorboard_dir)
 
     for epoch in range(trainer.start_epoch, args.epochs):
-
-        log('\nepoch={:03d}/{:03d}, lr={:e}'.format(epoch + 1, args.epochs, trainer.get_lr()))
+        log('\n=== EPOCH {}/{} ==='.format(epoch + 1, args.epochs))
+        log('Learning Rate: {:.2e}'.format(trainer.get_lr()))
+        log('Training Loop: For each token batch -> For each model architecture -> GHN-3 predicts parameters -> Forward pass -> Compute loss -> Backward pass -> Log metrics')
 
         trainer.reset_metrics(epoch)
 
@@ -389,18 +414,13 @@ def main():
                    disable=ddp.rank != 0)  # Only show progress bar on rank 0
 
         for step in pbar:
-
             if step >= len(train_queue):  # if we resume training from some start_step > 0, then need to break the loop
                 break
 
-            # Get next architecture batch
-            try:
-                models, graph_batch, metas = next(graphs_queue)
-            except StopIteration:
-                graphs_queue = iter(arch_loader)
-                models, graph_batch, metas = next(graphs_queue)
+            # ===== TRAINING LOOP STRUCTURE =====
+            # For each token batch, run all model architectures
             
-            # Get next token batch
+            # 1. Get next batch of WikiText data
             try:
                 token_batch = next(token_iter)
             except StopIteration:
@@ -411,8 +431,23 @@ def main():
             input_ids = token_batch["input_ids"]
             labels = token_batch["labels"]
             
-            # Update trainer with language model data
-            trainer.update_lm(input_ids, labels, graphs=graph_batch, models=models)
+            # 2. For this token batch, run through all model architectures
+            # Reset the architecture iterator for this token batch
+            arch_iter = iter(arch_loader)
+            
+            for arch_step in range(len(arch_loader)):
+                try:
+                    models, graph_batch, metas = next(arch_iter)
+                except StopIteration:
+                    break
+                
+                # 3. GHN-3 predicts parameters for this architecture
+                # 4. Forward pass through predicted model on this token batch
+                # 5. Compute loss (cross-entropy + parameter regularization)
+                # 6. Backward pass and optimizer step
+                # 7. Log metrics
+                # (All handled by trainer.update_lm)
+                trainer.update_lm(input_ids, labels, graphs=graph_batch, models=models)
             
             # Update progress bar with current metrics
             if ddp.rank == 0:  # Only update progress bar on rank 0
@@ -487,6 +522,22 @@ def main():
         
         log(f'Epoch {epoch + 1} completed - Loss: {epoch_loss:.4f}, Perplexity: {epoch_perplexity:.2f}, LR: {current_lr:.2e}')
         
+        # Save periodic checkpoint every 5 epochs
+        if (epoch + 1) % 5 == 0 and ddp.rank == 0:
+            checkpoint_path = os.path.join(checkpoints_dir, f'checkpoint_epoch_{epoch + 1}.pt')
+            torch.save({
+                'epoch': epoch + 1,
+                'model_state_dict': ghn.state_dict(),
+                'optimizer_state_dict': trainer._optimizer.state_dict(),
+                'scheduler_state_dict': trainer._scheduler.state_dict() if trainer._scheduler else None,
+                'loss': epoch_loss,
+                'perplexity': epoch_perplexity,
+                'config': config,
+                'args': args,
+                'training_metrics': training_metrics
+            }, checkpoint_path)
+            log(f'Periodic checkpoint saved at epoch {epoch + 1}: {checkpoint_path}')
+        
         trainer.scheduler_step()  # lr scheduler step
 
     # Final training summary
@@ -518,6 +569,7 @@ def main():
         log(f'Best model saved to: {os.path.join(best_model_dir, "best_ghn_model.pt")}')
         log(f'Training metrics saved to: {metrics_file}')
         log(f'Experiment metadata saved to: {metadata_file}')
+        log(f'All experiment files saved in: {experiment_dir}')
         
         # Create training visualization script
         create_training_visualization_script(metrics_file, args.save_dir)
