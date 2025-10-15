@@ -495,7 +495,7 @@ class Graph:
         self._Adj = A
         self._nodes = nodes
         if self._reduce_graph:
-            A, nodes = self._filter_graph()  # Filter graph first time to remove most of the redundant/unsupported nodes
+            A, nodes = self._filter_graph(exclude_embeddings=True)  # Filter graph first time to remove most of the redundant/unsupported nodes
 
         if self._fix_weight_edges:
             # The weight tensor is often incorrectly placed as a leaf node with a wrong edge direction.
@@ -612,11 +612,11 @@ class Graph:
 
         return
 
-    def _filter_graph(self, unsupported_modules=None):
+    def _filter_graph(self, unsupported_modules=None, exclude_embeddings=True):
         """
-        Keep: Linear, LayerNorm, Embedding, MultiheadAttention, TransformerEncoder/Layer,
+        Keep: Linear, LayerNorm, MultiheadAttention, TransformerEncoder/Layer,
               Softmax (as msa), Add (sum), Cat (if merges >1 input), input.
-        Drop: mean/pooling and anything not recognized.
+        Drop: mean/pooling, embeddings (if exclude_embeddings=True), and anything not recognized.
         """
         if unsupported_modules is None:
             unsupported_modules = ['Mean', 'AdaptiveAvgPool', 'MaxPool', 'AvgPool']
@@ -636,8 +636,15 @@ class Graph:
                         break
 
             keep = False
-            if name in ('linear', 'ln', 'embed', 'msa', 'input'):
-                keep = True
+            if name in ('linear', 'ln', 'msa', 'input'):
+                # Check if this is an embedding-related layer that should be excluded
+                if exclude_embeddings and ('lm_head' in pname or 'tok' in pname or 'pos' in pname):
+                    keep = False
+                else:
+                    keep = True
+            elif name == 'embed':
+                # Exclude embedding layers from GHN prediction if requested
+                keep = not exclude_embeddings
             elif name == 'sum':
                 keep = indeg[i] > 1
             elif name == 'concat':

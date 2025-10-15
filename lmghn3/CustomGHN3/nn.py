@@ -685,11 +685,21 @@ class GHN3(GHN):
 
                 if reduce_graph:
                     # Prune redundant ops in Network by setting their params to None to speed up training
+                    # But preserve embedding weights since they are excluded from GHN prediction
                     for m in target_modules[cell_id].values():
                         if m['is_w']:
-                            m['module'].weight = None
-                            if hasattr(m['module'], 'bias') and m['module'].bias is not None:
-                                m['module'].bias = None
+                            # Check if this is an embedding-related module that should be preserved
+                            module_name = str(type(m['module']).__name__)
+                            param_name = m.get('param_name', '')
+                            is_embedding = (module_name == 'Embedding' or 
+                                          'tok' in param_name or 
+                                          'pos' in param_name or 
+                                          'lm_head' in param_name)
+                            
+                            if not is_embedding:
+                                m['module'].weight = None
+                                if hasattr(m['module'], 'bias') and m['module'].bias is not None:
+                                    m['module'].bias = None
 
         return mapping, params_map
 

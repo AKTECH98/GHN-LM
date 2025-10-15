@@ -185,15 +185,16 @@ class Trainer:
                 else:
                     return default
 
-            warmup_steps = int(parse_arg('steps', 5))  # number of warmup steps/epochs (default: 5)
+            warmup_steps = int(parse_arg('steps', 1000))  # number of warmup steps (default: 1000)
             cycles = 0.5
-            warmup_lr = parse_arg('init_lr', 1e-5) / opt_args['lr']  # initial warmup lr (default: 1e-5)
+            warmup_lr = parse_arg('init_lr', 0.0001) / opt_args['lr']  # initial warmup lr (default: 0.0001)
+            total_steps = self.epochs * self.n_batches  # total training steps
 
             def lr_lambda(step):
                 # Based on https://huggingface.co/transformers/v1.2.0/_modules/pytorch_transformers/optimization.html
-                if step < warmup_steps - 1:
-                    return np.linspace(warmup_lr, 1, warmup_steps)[step]
-                progress = float(step - warmup_steps) / float(max(1, self.epochs - warmup_steps))
+                if step < warmup_steps:
+                    return warmup_lr + (1.0 - warmup_lr) * step / warmup_steps
+                progress = float(step - warmup_steps) / float(max(1, total_steps - warmup_steps))
                 return max(0.0, 0.5 * (1. + math.cos(math.pi * cycles * 2.0 * progress)))
             self._scheduler = LambdaLR(self._optimizer, lr_lambda=lr_lambda)
 
