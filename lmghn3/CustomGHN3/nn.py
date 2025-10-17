@@ -137,10 +137,11 @@ class GHN3(GHN):
     But most of the functions are overridden to support GHN-3 and improve code.
     """
 
-    def __init__(self, max_shape, num_classes, hid, heads=8, layers=3, is_ghn2=False, pretrained=False, **kwargs):
+    def __init__(self, max_shape, num_classes, hid, heads=8, layers=3, is_ghn2=False, pretrained=False, exclude_embeddings=True, **kwargs):
 
         act_layer = kwargs.pop('act_layer', nn.GELU)
         super().__init__(max_shape, num_classes, hid=hid, **kwargs)
+        self.exclude_embeddings = exclude_embeddings
 
         self._is_ghn2 = is_ghn2
         if not self._is_ghn2:
@@ -214,7 +215,7 @@ class GHN3(GHN):
             nets_torch = [nets_torch]
 
         if graphs is None:
-            graphs = GraphBatch([Graph(net, ve_cutoff=50 if self.ve else 1) for net in nets_torch],
+            graphs = GraphBatch([Graph(net, ve_cutoff=50 if self.ve else 1, exclude_embeddings=self.exclude_embeddings) for net in nets_torch],
                                 dense=self.is_dense()).to_device(device)
         elif isinstance(graphs, Graph) or isinstance(graphs, (list, tuple)):
             graphs = GraphBatch([graphs] if isinstance(graphs, Graph) else graphs,
@@ -685,11 +686,21 @@ class GHN3(GHN):
 
                 if reduce_graph:
                     # Prune redundant ops in Network by setting their params to None to speed up training
+                    # But preserve embedding weights since they are excluded from GHN prediction
                     for m in target_modules[cell_id].values():
                         if m['is_w']:
-                            m['module'].weight = None
-                            if hasattr(m['module'], 'bias') and m['module'].bias is not None:
-                                m['module'].bias = None
+                            # Check if this is an embedding-related module that should be preserved
+                            module_name = str(type(m['module']).__name__)
+                            param_name = m.get('param_name', '')
+                            is_embedding = (module_name == 'Embedding' or 
+                                          'tok' in param_name or 
+                                          'pos' in param_name or 
+                                          'lm_head' in param_name)
+                            
+                            if not is_embedding:
+                                m['module'].weight = None
+                                if hasattr(m['module'], 'bias') and m['module'].bias is not None:
+                                    m['module'].bias = None
 
         return mapping, params_map
 

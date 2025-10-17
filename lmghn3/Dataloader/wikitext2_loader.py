@@ -41,16 +41,13 @@ def _group_texts(examples, block_size: int):
         k: [t[i : i + block_size] for i in range(0, total_len, block_size)]
         for k, t in concatenated.items() if k != "labels"  # Exclude labels from initial creation
     }
-    
-    # Labels are next-token prediction targets (shifted by 1 position)
-    # For next token prediction: predict token at position i+1 given tokens 0...i
-    # Standard approach: labels[i] = input_ids[i+1], last position ignored (-100)
+    # Labels are next-token prediction targets (shift by 1 position)
     labels = []
-    for seq in result["input_ids"]:
-        # Shift sequence by 1: [1, 2, 3, 4] -> [2, 3, 4, -100]
-        # The last position has no target (use -100 which gets ignored in loss)
-        shifted = seq[1:] + [-100]  # -100 is ignore_index in cross_entropy
-        labels.append(shifted)
+    for input_ids in result["input_ids"]:
+        # Shift labels by 1 position: labels[i] = input_ids[i+1]
+        # Last position gets -100 (ignore index)
+        label_seq = input_ids[1:] + [-100]
+        labels.append(label_seq)
     result["labels"] = labels
     return result
 

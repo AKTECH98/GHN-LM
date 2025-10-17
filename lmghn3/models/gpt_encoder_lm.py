@@ -92,11 +92,11 @@ class GPTEncoderLayerLM(BaseLanguageModel):
         logits = self.lm_head(h)
 
         # Compute loss if targets provided
-        loss = None
         if targets is not None:
             loss = self.compute_loss(logits, targets)
+            return logits, loss
         
-        return logits, loss
+        return logits
 
     @torch.no_grad()
     def generate(self, idx: torch.Tensor, max_new_tokens=50, temperature=1.0, top_k: Optional[int] = None):

@@ -5,8 +5,10 @@
 #SBATCH --comment="GHN-3 Language Model Training"
 #SBATCH --mail-user=slack:@ak3748       # Slack username to notify
 #SBATCH --mail-type=END
-#SBATCH --gres=gpu:a100:2
-#SBATCH --time=0-02:00:00
+#SBATCH --gres=gpu:a100:1
+#SBATCH --output=%x_%j.out
+#SBATCH --error=%x_%j.err
+#SBATCH --time=0-12:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4

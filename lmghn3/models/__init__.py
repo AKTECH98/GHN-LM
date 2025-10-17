@@ -27,9 +27,6 @@ Usage:
 from .base import BaseConfig, BaseLanguageModel, EmbeddingLayer, LMHead, RNNBaseLanguageModel
 
 # Import individual models
-from .rnn_lm import RNNLanguageModel, RNNConfig
-from .lstm_lm import LSTMLanguageModel, LSTMConfig
-from .gru_lm import GRULanguageModel, GRUConfig
 from .gpt_encoder_lm import GPTEncoderLayerLM, GPTConfig as GPTEncoderConfig
 from .mini_gpt import GPTDecoderLM, GPTConfig as MiniGPTConfig
 
@@ -43,12 +40,6 @@ __all__ = [
     "RNNBaseLanguageModel",
     
     # Model classes
-    "RNNLanguageModel",
-    "RNNConfig",
-    "LSTMLanguageModel", 
-    "LSTMConfig",
-    "GRULanguageModel",
-    "GRUConfig",
     "GPTEncoderLayerLM",
     "GPTEncoderConfig",
     "GPTDecoderLM",

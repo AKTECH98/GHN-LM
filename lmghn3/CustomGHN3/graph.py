@@ -2,10 +2,14 @@ import numpy as np
 import heapq
 import torch
 import torch.nn as nn
+import warnings
 import networkx as nx
 import transformers
 import torch.nn.functional as F
 from torch.nn.parallel.scatter_gather import Scatter as _scatter
+
+# Suppress NetworkX backend warning
+warnings.filterwarnings("ignore", message="networkx backend defined more than once: nx-loopback")
 
 import sys
 sys.setrecursionlimit(10000)  # for large models like efficientnet_v2_l
@@ -268,7 +272,7 @@ class Graph:
 
     def __init__(self, model=None, node_feat=None, node_info=None, A=None, edges=None, net_args=None, net_idx=None,
                  ve_cutoff=50, list_all_nodes=False, reduce_graph=True, fix_weight_edges=True, fix_softmax_edges=True,
-                 dense=False, verbose=True):
+                 dense=False, verbose=True, exclude_embeddings=True):
         r"""
         Pass either model or node/edge arguments.
         :param model: Neural Network inherited from nn.Module
@@ -284,6 +288,7 @@ class Graph:
         :param fix_weight_edges: rewire edges to/from the weight nodes to make it a correct DAG
         :param fix_softmax_edges: rewire edges to/from the softmax nodes to make it consistent with DeepNets-1M DAGs
         :param verbose: print warnings
+        :param exclude_embeddings: whether to exclude embedding layers from GHN prediction (default: True)
         """
 
         assert node_feat is None or model is None, 'either model or other arguments must be specified'
@@ -294,6 +299,7 @@ class Graph:
         self._reduce_graph = reduce_graph
         self._fix_weight_edges = fix_weight_edges
         self._fix_softmax_edges = fix_softmax_edges
+        self._exclude_embeddings = exclude_embeddings
         self.nx_graph = None  # NetworkX DiGraph instance
 
         if model is not None:
@@ -496,7 +502,7 @@ class Graph:
         self._Adj = A
         self._nodes = nodes
         if self._reduce_graph:
-            A, nodes = self._filter_graph()  # Filter graph first time to remove most of the redundant/unsupported nodes
+            A, nodes = self._filter_graph(exclude_embeddings=self._exclude_embeddings)  # Filter graph first time to remove most of the redundant/unsupported nodes
 
         if self._fix_weight_edges:
             # The weight tensor is often incorrectly placed as a leaf node with a wrong edge direction.
@@ -568,7 +574,7 @@ class Graph:
 
         if self._reduce_graph:
             # Filter the graph one more time, since above manipulations could lead to redundant add/concat nodes
-            A, nodes = self._filter_graph(unsupported_modules=['Add', 'Cat'])
+            A, nodes = self._filter_graph(unsupported_modules=['Add', 'Cat'], exclude_embeddings=self._exclude_embeddings)
 
         # Add input node
         try:
@@ -613,11 +619,11 @@ class Graph:
 
         return
 
-    def _filter_graph(self, unsupported_modules=None):
+    def _filter_graph(self, unsupported_modules=None, exclude_embeddings=True):
         """
-        Keep: Linear, LayerNorm, Embedding, MultiheadAttention, TransformerEncoder/Layer,
+        Keep: Linear, LayerNorm, MultiheadAttention, TransformerEncoder/Layer,
               Softmax (as msa), Add (sum), Cat (if merges >1 input), input.
-        Drop: mean/pooling and anything not recognized.
+        Drop: mean/pooling, embeddings (if exclude_embeddings=True), and anything not recognized.
         """
         if unsupported_modules is None:
             unsupported_modules = ['Mean', 'AdaptiveAvgPool', 'MaxPool', 'AvgPool']
@@ -637,8 +643,15 @@ class Graph:
                         break
 
             keep = False
-            if name in ('linear', 'ln', 'embed', 'msa', 'input'):
-                keep = True
+            if name in ('linear', 'ln', 'msa', 'input'):
+                # Check if this is an embedding-related layer that should be excluded
+                if exclude_embeddings and ('lm_head' in pname or 'tok' in pname or 'pos' in pname):
+                    keep = False
+                else:
+                    keep = True
+            elif name == 'embed':
+                # Exclude embedding layers from GHN prediction if requested
+                keep = not exclude_embeddings
             elif name == 'sum':
                 keep = indeg[i] > 1
             elif name == 'concat':

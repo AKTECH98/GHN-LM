@@ -117,7 +117,7 @@ class Trainer:
                     map_location = {'cuda:%d' % 0: device}
                 else:
                     map_location = self.rank
-                state_dict = torch.load(ckpt, map_location=map_location)
+                state_dict = torch.load(ckpt, map_location=map_location, weights_only=False)
                 model.load_state_dict(state_dict['state_dict'])
                 self.start_epoch = state_dict['epoch']
                 self.start_step = state_dict['step']
@@ -185,15 +185,16 @@ class Trainer:
                 else:
                     return default
 
-            warmup_steps = int(parse_arg('steps', 5))  # number of warmup steps/epochs (default: 5)
+            warmup_steps = int(parse_arg('steps', 1000))  # number of warmup steps (default: 1000)
             cycles = 0.5
-            warmup_lr = parse_arg('init_lr', 1e-5) / opt_args['lr']  # initial warmup lr (default: 1e-5)
+            warmup_lr = parse_arg('init_lr', 0.0001) / opt_args['lr']  # initial warmup lr (default: 0.0001)
+            total_steps = self.epochs * self.n_batches  # total training steps
 
             def lr_lambda(step):
                 # Based on https://huggingface.co/transformers/v1.2.0/_modules/pytorch_transformers/optimization.html
-                if step < warmup_steps - 1:
-                    return np.linspace(warmup_lr, 1, warmup_steps)[step]
-                progress = float(step - warmup_steps) / float(max(1, self.epochs - warmup_steps))
+                if step < warmup_steps:
+                    return warmup_lr + (1.0 - warmup_lr) * step / warmup_steps
+                progress = float(step - warmup_steps) / float(max(1, total_steps - warmup_steps))
                 return max(0.0, 0.5 * (1. + math.cos(math.pi * cycles * 2.0 * progress)))
             self._scheduler = LambdaLR(self._optimizer, lr_lambda=lr_lambda)
 
@@ -589,20 +590,14 @@ class Trainer:
 
             # Update training metrics (for language models, we use perplexity instead of accuracy)
             if len(logits) > 0:
-                # Calculate perplexity as a metric
+                # Calculate perplexity as a metric with overflow protection
                 avg_logits = torch.stack(logits).mean(0)  # Average logits across models
-                perplexity_loss = F.cross_entropy(avg_logits.view(-1, avg_logits.size(-1)), 
-                                                 labels.view(-1), 
-                                                 ignore_index=-100)
-                
-                # Check for NaN perplexity (edge case: all labels are -100)
-                if torch.isnan(perplexity_loss):
-                    print(f"Warning: NaN perplexity loss detected at step {self._step}")
-                    print(f"  Valid targets: {(labels != -100).sum().item()}")
-                    print(f"  Total targets: {labels.numel()}")
-                    perplexity = torch.tensor(float('inf'))  # Use infinity for NaN perplexity
-                else:
-                    perplexity = torch.exp(perplexity_loss)
+                cross_entropy_loss = F.cross_entropy(avg_logits.view(-1, avg_logits.size(-1)), 
+                                                    labels.view(-1), 
+                                                    ignore_index=-100)
+                # Clamp loss to prevent overflow in perplexity calculation
+                clamped_loss = torch.clamp(cross_entropy_loss, max=10.0)  # exp(10) ≈ 22,026
+                perplexity = torch.exp(clamped_loss)
                 
                 n = len(labels.view(-1))
                 self.metrics['loss'].update((loss_avg if self.ddp else loss).item(), n)
