@@ -23,22 +23,23 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Import our modules
 from lmghn3.CustomGHN3.nn import GHN3
-from lmghn3.language_models.tiny_lm_fixed import TinyTransformerLM
-from lmghn3.language_models.wikitext2_loader import build_wikitext2
+from lmghn3.models.mini_gpt import GPTDecoderLM, GPTConfig
+from lmghn3.Dataloader.wikitext2_loader import build_wikitext2
 from lmghn3.CustomGHN3.graph import Graph
 from lmghn3.CustomGHN3.trainer import Trainer
 
 def create_simple_model(vocab_size=1000, seq_len=64, max_len=128):
     """Create a simple transformer model for testing."""
-    return TinyTransformerLM(
+    config = GPTConfig(
         vocab_size=vocab_size,
-        max_len=max_len,
+        max_seq_len=max_len,
         d_model=128,
-        n_heads=2,
-        n_layers=2,
+        n_head=2,
+        n_layer=2,
         d_ff=256,
         p_drop=0.1
     )
+    return GPTDecoderLM(config)
 
 def create_simple_data(vocab_size=1000, seq_len=64, batch_size=4, num_batches=10):
     """Create simple synthetic data for testing."""
