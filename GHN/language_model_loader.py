@@ -44,7 +44,7 @@ class LanguageModelDataset(torch.utils.data.Dataset):
         for i, config in enumerate(self.model_configs):
             try:
                 # Import here to avoid circular imports
-                from lmghn3.models import GPTEncoderLayerLM, GPTEncoderConfig
+                from LM import GPTEncoderLayerLM, GPTEncoderConfig
                 
                 # Create model based on type
                 model_type = config.get('model_type', 'gpt_encoder').lower()
@@ -136,7 +136,7 @@ class LanguageModelDataset(torch.utils.data.Dataset):
         
         try:
             # Import here to avoid circular imports
-            from lmghn3.models import GPTEncoderLayerLM, GPTEncoderConfig
+            from LM import GPTEncoderLayerLM, GPTEncoderConfig
             
             # Create model based on type
             model_type = config.get('model_type', 'gpt_encoder').lower()
@@ -151,7 +151,7 @@ class LanguageModelDataset(torch.utils.data.Dataset):
                 model = GPTEncoderLayerLM(model_config)
             elif model_type == 'mini_gpt':
                 # Import MiniGPT components
-                from lmghn3.models import GPTDecoderLM, MiniGPTConfig
+                from LM import GPTDecoderLM, MiniGPTConfig
                 # Force tie_weights=False for GHN-3 compatibility
                 config_copy['tie_weights'] = False
                 model_config = MiniGPTConfig(**config_copy)
@@ -201,7 +201,7 @@ class LanguageModelDataset(torch.utils.data.Dataset):
                 log(f"Warning: Failed to create graph for config {idx}, skipping")
                 # Return a simple dummy graph to avoid None issues
                 try:
-                    from lmghn3.models import GPTEncoderLayerLM, GPTEncoderConfig
+                    from LM import GPTEncoderLayerLM, GPTEncoderConfig
                     dummy_config = GPTEncoderConfig(
                         vocab_size=1000, d_model=64, n_layer=1, n_head=2, 
                         d_ff=128, max_seq_len=32, p_drop=0.0, tie_weights=False

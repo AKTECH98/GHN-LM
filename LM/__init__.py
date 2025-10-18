@@ -24,7 +24,7 @@ Usage:
 """
 
 # Import base classes
-from .base import BaseConfig, BaseLanguageModel, EmbeddingLayer, LMHead, RNNBaseLanguageModel
+from .base import BaseConfig, BaseLanguageModel, EmbeddingLayer, LMHead
 
 # Import individual models
 from .gpt_encoder_lm import GPTEncoderLayerLM, GPTConfig as GPTEncoderConfig
@@ -37,7 +37,6 @@ __all__ = [
     "BaseLanguageModel", 
     "EmbeddingLayer",
     "LMHead",
-    "RNNBaseLanguageModel",
     
     # Model classes
     "GPTEncoderLayerLM",

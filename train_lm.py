@@ -14,7 +14,6 @@ import argparse
 import os
 import sys
 import time
-from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -25,14 +24,14 @@ from tqdm import tqdm
 # Add the lmghn3 directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'lmghn3'))
 
-from models import (
+from LM import (
     RNNLanguageModel, RNNConfig,
     LSTMLanguageModel, LSTMConfig,
     GRULanguageModel, GRUConfig,
     GPTEncoderLayerLM, GPTEncoderConfig,
     GPTDecoderLM, MiniGPTConfig
 )
-from lmghn3.Dataloader.wikitext2_loader import build_wikitext2
+from Dataloader.wikitext2_loader import build_wikitext2
 from simple_logger import SimpleLogger
 
 

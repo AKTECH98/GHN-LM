@@ -12,9 +12,9 @@ from torch.utils.tensorboard import SummaryWriter
 warnings.filterwarnings("ignore", message="networkx backend defined more than once: nx-loopback")
 
 from ppuda.config import init_config
-from lmghn3.CustomGHN3 import GHN3, log, Trainer, setup_ddp, clean_ddp
-from lmghn3.Dataloader.lm_arch_loader import build_ghn_variants_dataloader
-from lmghn3.Dataloader.wikitext2_loader import build_wikitext2
+from GHN import GHN3, log, Trainer, setup_ddp, clean_ddp
+from Dataloader.lm_arch_loader import build_ghn_variants_dataloader
+from Dataloader.wikitext2_loader import build_wikitext2
 
 log = partial(log, flush=True)
 

@@ -44,7 +44,7 @@ A comprehensive model configuration generator that creates diverse language mode
 ### Basic Usage
 
 ```python
-from lmghn3.Dataloader import create_reasonable_model_dataloader
+from Dataloader import create_reasonable_model_dataloader
 
 # Create a reasonable dataset (~17K configurations)
 dataloader, configs = create_reasonable_model_dataloader(
@@ -66,7 +66,7 @@ for models, metadatas in dataloader:
 ### Advanced Usage
 
 ```python
-from lmghn3.Dataloader import (
+from Dataloader import (
     create_reasonable_model_dataloader,
     create_full_model_dataloader,
     create_model_dataloader,
@@ -195,7 +195,7 @@ Examples:
 ## 🛠️ Integration with GHN Training
 
 ```python
-from lmghn3.Dataloader import create_reasonable_model_dataloader
+from Dataloader import create_reasonable_model_dataloader
 from your_ghn_module import GHNTrainer
 
 # Create model dataset
