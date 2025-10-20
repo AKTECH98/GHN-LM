@@ -4,9 +4,10 @@
 #SBATCH --partition=debug
 #SBATCH --comment="GHN-3 Language Model Training with TensorBoard"
 #SBATCH --mail-user=slack:@ak3748       # Slack username to notify
+#SBATCH --mail-type=BEGIN
 #SBATCH --mail-type=END
 #SBATCH --gres=gpu:a100:1
-#SBATCH --time=0-12:00:00
+#SBATCH --time=0-3:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -26,6 +27,8 @@ LOG_FILE="$LOG_DIR/${JOB_TAG}.log"
 # Pipe script stdout/stderr to files and also to console
 exec > >(tee -a "$OUT_FILE" | tee -a "$LOG_FILE")
 exec 2> >(tee -a "$ERR_FILE" | tee -a "$LOG_FILE" >&2)
+
+source venv/bin/activate
 
 echo "Starting GHN-3 Language Model Training-include_embeddings"
 echo "======================================"
@@ -47,8 +50,9 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # Run GHN-3 training with enhanced features
 # Using the new train_ghn_lm.py script with TensorBoard and experiment tracking
-python lmghn3/train_ghn_lm.py \
-    --heads 2 \
+python train_ghn.py \
+    --heads 4 \
+    --layers 6 \
     --seq_len 64 \
     --interm_epoch 1 \
     --epochs 100 \

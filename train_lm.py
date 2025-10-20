@@ -3,11 +3,11 @@
 Train a single language model on WikiText-2 dataset.
 
 This script allows you to train any model from the models folder on the WikiText-2 dataset.
-It supports all available models: RNN, LSTM, GRU, GPT Encoder, and Mini GPT.
+It supports available models: GPT Encoder and Mini GPT.
 
 Usage:
-    python train_single_model.py --model lstm --epochs 10 --batch_size 8
-    python train_single_model.py --model mini_gpt --epochs 5 --d_model 256 --n_layer 4
+    python train_lm.py --model gpt_encoder --epochs 10 --batch_size 8
+    python train_lm.py --model mini_gpt --epochs 5 --d_model 256 --n_layer 4
 """
 
 import argparse
@@ -21,13 +21,10 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-# Add the lmghn3 directory to the path
-sys.path.append(os.path.join(os.path.dirname(__file__), 'lmghn3'))
+# Add the current directory to the path for imports
+sys.path.append(os.path.dirname(__file__))
 
 from LM import (
-    RNNLanguageModel, RNNConfig,
-    LSTMLanguageModel, LSTMConfig,
-    GRULanguageModel, GRUConfig,
     GPTEncoderLayerLM, GPTEncoderConfig,
     GPTDecoderLM, MiniGPTConfig
 )
@@ -107,10 +104,10 @@ class ModelTrainer:
                 # Models that accept targets parameter
                 output = self.model(input_ids, targets=labels)
                 if len(output) == 3:
-                    # RNN-based models return (logits, loss, hidden)
+                    # Some models return (logits, loss, hidden)
                     logits, loss, hidden = output
                 else:
-                    # Transformer models return (logits, loss)
+                    # Most models return (logits, loss)
                     logits, loss = output
                 
                 if loss is None:
@@ -120,10 +117,10 @@ class ModelTrainer:
                 # Models that don't accept targets parameter
                 output = self.model(input_ids)
                 if len(output) == 3:
-                    # RNN-based models return (logits, loss, hidden)
+                    # Some models return (logits, loss, hidden)
                     logits, loss, hidden = output
                 else:
-                    # Transformer models return (logits, loss)
+                    # Most models return (logits, loss)
                     logits, loss = output
                 
                 loss = self.criterion(logits.view(-1, logits.size(-1)), labels.view(-1))
@@ -329,37 +326,7 @@ class ModelTrainer:
 
 def create_model(model_name, vocab_size, args):
     """Create a model based on the model name and arguments."""
-    if model_name == "rnn":
-        config = RNNConfig(
-            vocab_size=vocab_size,
-            d_model=args.d_model,
-            n_layer=args.n_layer,
-            max_seq_len=args.seq_len,
-            p_drop=args.dropout
-        )
-        return RNNLanguageModel(config)
-    
-    elif model_name == "lstm":
-        config = LSTMConfig(
-            vocab_size=vocab_size,
-            d_model=args.d_model,
-            n_layer=args.n_layer,
-            max_seq_len=args.seq_len,
-            p_drop=args.dropout
-        )
-        return LSTMLanguageModel(config)
-    
-    elif model_name == "gru":
-        config = GRUConfig(
-            vocab_size=vocab_size,
-            d_model=args.d_model,
-            n_layer=args.n_layer,
-            max_seq_len=args.seq_len,
-            p_drop=args.dropout
-        )
-        return GRULanguageModel(config)
-    
-    elif model_name == "gpt_encoder":
+    if model_name == "gpt_encoder":
         config = GPTEncoderConfig(
             vocab_size=vocab_size,
             d_model=args.d_model,
@@ -393,7 +360,7 @@ def main():
     
     # Model selection
     parser.add_argument("--model", type=str, required=True,
-                       choices=["rnn", "lstm", "gru", "gpt_encoder", "mini_gpt"],
+                       choices=["gpt_encoder", "mini_gpt"],
                        help="Model to train")
     
     # Training parameters

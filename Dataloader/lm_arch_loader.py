@@ -15,10 +15,10 @@ from torch.utils.data import Dataset, DataLoader
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
-from ..GHN.graph import Graph, GraphBatch
+from GHN.graph import Graph, GraphBatch
 
 # Import the available model architectures
-from ..LM import (
+from LM import (
     GPTEncoderLayerLM, GPTEncoderConfig,
     GPTDecoderLM, MiniGPTConfig
 )

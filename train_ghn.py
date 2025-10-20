@@ -28,13 +28,14 @@ def main():
                                                             ' https://github.com/facebookresearch/ppuda to train GHN-2')
     parser.add_argument('--interm_epoch', type=int, default=5, help='intermediate epochs to keep checkpoints for')
     parser.add_argument('--include_embeddings', action='store_true', help='include embedding layers in GHN prediction (default: exclude embeddings)')
-    
+    parser.add_argument('--layers', type=int, default=3, help='number of layers in GHN-3')
+
     ghn2 = parser.parse_known_args()[0].ghn2
 
     ddp = setup_ddp()
     args = init_config(mode='train_ghn', parser=parser, verbose=ddp.rank == 0,
                        debug=0,   # to avoid extra sanity checks and make training faster
-                       layers=3,  # default number of layers in GHN-3
+                       layers=args.layers,  # default number of layers in GHN-3
                        shape_multiplier=2 if ghn2 else 1)  # max_shape default setting (can be overriden by --max_shape)
     
     # Get job ID from environment or generate one

@@ -475,11 +475,10 @@ class Graph:
                         break
                 V = emb.num_embeddings if emb is not None else 50257  # GPT2 default-ish
 
-            cfg = getattr(self.model, "config", None) or getattr(self.model, "cfg", None)
+            cfg = getattr(self.model, "config", None)
             T = getattr(self.model, "max_len",
                         getattr(cfg, "n_positions",
-                                getattr(cfg, "max_position_embeddings",
-                                        getattr(cfg, "max_seq_len", 64))))
+                                getattr(cfg, "max_position_embeddings", 64)))
 
             B = 2
             input_ids = torch.randint(0, V, (B, T), device=device, dtype=torch.long)
