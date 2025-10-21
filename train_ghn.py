@@ -19,8 +19,11 @@ from Dataloader.wikitext2_loader import build_wikitext2
 log = partial(log, flush=True)
 
 
-def main():
+def parse_arguments():
+    """Parse command line arguments for GHN training."""
     parser = argparse.ArgumentParser(description='GHN-3 training for Language Models')
+    
+    # GHN-specific arguments
     parser.add_argument("--seq_len", type=int, default=256, help='sequence length for the language model')
     parser.add_argument('--heads', type=int, default=8, help='number of self-attention heads in GHN-3')
     parser.add_argument('--compile', type=str, default=None, help='use pytorch2.0 compilation for potential speedup')
@@ -28,7 +31,49 @@ def main():
                                                             ' https://github.com/facebookresearch/ppuda to train GHN-2')
     parser.add_argument('--interm_epoch', type=int, default=5, help='intermediate epochs to keep checkpoints for')
     parser.add_argument('--include_embeddings', action='store_true', help='include embedding layers in GHN prediction (default: exclude embeddings)')
+    
+    # PPUDA-specific arguments
+    parser.add_argument('--epochs', type=int, default=100, help='number of training epochs')
+    parser.add_argument('--batch_size', type=int, default=32, help='batch size for training')
+    parser.add_argument('--meta_batch_size', type=int, default=16, help='batch size for meta-learning')
+    parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
+    parser.add_argument('--wd', type=float, default=1e-4, help='weight decay')
+    parser.add_argument('--momentum', type=float, default=0.9, help='momentum for SGD optimizer')
+    parser.add_argument('--opt', type=str, default='adam', choices=['adam', 'sgd', 'adamw'], help='optimizer type')
+    parser.add_argument('--scheduler', type=str, default=None, help='learning rate scheduler')
+    parser.add_argument('--lr_steps', type=int, nargs='+', default=[50, 75], help='learning rate step milestones')
+    parser.add_argument('--gamma', type=float, default=0.1, help='learning rate decay factor')
+    parser.add_argument('--grad_clip', type=float, default=1.0, help='gradient clipping value')
+    parser.add_argument('--amp', action='store_true', help='use automatic mixed precision')
+    parser.add_argument('--log_interval', type=int, default=100, help='logging interval')
+    
+    # Model architecture arguments
+    parser.add_argument('--layers', type=int, default=3, help='number of layers in GHN')
+    parser.add_argument('--hid', type=int, default=64, help='hidden dimension size')
+    parser.add_argument('--hypernet', type=str, default='gated', choices=['gated', 'mlp'], help='hypernetwork type')
+    parser.add_argument('--decoder', type=str, default='conv', choices=['conv', 'mlp'], help='decoder type')
+    parser.add_argument('--weight_norm', action='store_true', help='use weight normalization')
+    parser.add_argument('--virtual_edges', type=int, default=1, help='virtual edges configuration')
+    parser.add_argument('--ln', action='store_true', help='use layer normalization')
+    parser.add_argument('--max_shape', type=int, nargs=4, default=[1024, 1024, 1, 1], help='maximum shape for parameters')
+    
+    # Data arguments
+    parser.add_argument('--data_dir', type=str, default='./data', help='data directory path')
+    parser.add_argument('--num_workers', type=int, default=4, help='number of data loading workers')
+    parser.add_argument('--device', type=str, default='cuda', choices=['cuda', 'cpu'], help='device to use')
+    
+    # System arguments
+    parser.add_argument('--save', type=str, default=None, help='directory to save checkpoints (default: Experiment/{job_id})')
+    parser.add_argument('--ckpt', type=str, default=None, help='checkpoint to resume from')
+    parser.add_argument('--debug', type=int, default=0, help='debug level')
+    parser.add_argument('--verbose', action='store_true', help='verbose output')
+    
+    return parser
 
+
+def main():
+    # Parse arguments
+    parser = parse_arguments()
     parsed_args = parser.parse_known_args()[0]
     ghn2 = parsed_args.ghn2
 
@@ -102,7 +147,7 @@ def main():
 
     hid = args.hid
 
-    config = {'max_shape': (1024, 1024, 1, 1), 'num_classes': num_classes, 'hypernet': args.hypernet,
+    config = {'num_classes': num_classes, 'hypernet': args.hypernet,
               'decoder': args.decoder, 'weight_norm': args.weight_norm, 've': args.virtual_edges > 1,
               'layernorm': args.ln, 'hid': hid, 'layers': args.layers, 'heads': args.heads, 'is_ghn2': ghn2,
               'exclude_embeddings': not args.include_embeddings}
@@ -111,17 +156,53 @@ def main():
     
     # Save config metadata to experiment directory
     if ddp.rank == 0:
+        # Organize config into logical sections
+        ghn_config = {
+            'hypernet': args.hypernet,
+            'decoder': args.decoder,
+            'weight_norm': args.weight_norm,
+            'virtual_edges': args.virtual_edges,
+            'layernorm': args.ln,
+            'hid': args.hid,
+            'layers': args.layers,
+            'heads': args.heads,
+            'is_ghn2': ghn2,
+            'exclude_embeddings': not args.include_embeddings,
+            'max_shape': args.max_shape
+        }
+        
+        training_config = {
+            'epochs': args.epochs,
+            'batch_size': args.batch_size,
+            'meta_batch_size': args.meta_batch_size,
+            'lr': args.lr,
+            'wd': args.wd,
+            'momentum': args.momentum,
+            'opt': args.opt,
+            'scheduler': args.scheduler,
+            'lr_steps': args.lr_steps,
+            'gamma': args.gamma,
+            'grad_clip': args.grad_clip,
+            'amp': args.amp,
+            'log_interval': args.log_interval,
+            'interm_epoch': args.interm_epoch,
+            'compile': args.compile
+        }
+        
+        dataset_config = {
+            'name': args.dataset,
+            'num_classes': num_classes,
+            'seq_len': args.seq_len,
+            'data_dir': args.data_dir,
+            'num_workers': args.num_workers
+        }
+        
         config_metadata = {
             'job_id': job_id,
             'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
-            'args': vars(args),
-            'config': config,
-            'dataset': args.dataset,
-            'num_classes': num_classes,
-            'seq_len': args.seq_len,
-            'heads': args.heads,
-            'include_embeddings': args.include_embeddings,
-            'ghn2': ghn2
+            'ghn_config': ghn_config,
+            'training_config': training_config,
+            'dataset_config': dataset_config
         }
         
         config_path = os.path.join(job_experiment_dir, 'config.json')
@@ -132,9 +213,9 @@ def main():
     # Use language model architecture loader instead of DeepNets1M
     graphs_queue = arch_loader
 
-    # Update save directory to experiment folder
-    if args.save:
-        args.save = job_experiment_dir
+    # Update save directory to experiment folder (always use experiment directory)
+    args.save = job_experiment_dir
+    log(f'Checkpoints will be saved to: {job_experiment_dir}')
     
     trainer = Trainer(ghn,
                       opt=args.opt,
