@@ -24,6 +24,7 @@ training:
   device: "cuda"
   mixed_precision: true
   gradient_accumulation_steps: 2
+  seed: 42
 
 data:
   seq_len: 128
