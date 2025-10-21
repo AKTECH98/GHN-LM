@@ -30,6 +30,9 @@ from .base import BaseConfig, BaseLanguageModel, EmbeddingLayer, LMHead
 from .gpt_encoder_lm import GPTEncoderLayerLM, GPTConfig as GPTEncoderConfig
 from .mini_gpt import GPTDecoderLM, GPTConfig as MiniGPTConfig
 
+# Import trainer
+from .trainer import Trainer
+
 # Define what gets imported with "from models import *"
 __all__ = [
     # Base classes
@@ -43,5 +46,8 @@ __all__ = [
     "GPTEncoderConfig",
     "GPTDecoderLM",
     "MiniGPTConfig",
+    
+    # Trainer
+    "Trainer",
 
 ]

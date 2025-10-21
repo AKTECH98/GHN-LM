@@ -1,0 +1,30 @@
+# Benchmark 4: Large Model Configuration
+# ~50M parameters - High performance
+
+model:
+  model_type: "gpt_encoder"
+  vocab_size: 50257
+  d_model: 512
+  n_layer: 8
+  n_head: 8
+  d_ff: 2048
+  max_seq_len: 256
+  p_drop: 0.1
+
+training:
+  epochs: 100
+  batch_size: 4
+  learning_rate: 0.0003
+  weight_decay: 0.01
+  warmup_steps: 1000
+  max_grad_norm: 1.0
+  save_interval: 20
+  eval_interval: 10
+  log_interval: 100
+  device: "cuda"
+  mixed_precision: true
+  gradient_accumulation_steps: 4
+
+data:
+  seq_len: 256
+  num_workers: 4

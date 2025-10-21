@@ -1,0 +1,31 @@
+# Benchmark 1: Tiny Model Configuration
+# ~0.1M parameters - Quick testing and debugging
+
+model:
+  model_type: "gpt_encoder"
+  vocab_size: 50257
+  d_model: 64
+  n_layer: 2
+  n_head: 2
+  d_ff: 256
+  max_seq_len: 32
+  p_drop: 0.1
+
+training:
+  epochs: 10
+  batch_size: 32
+  learning_rate: 0.001
+  weight_decay: 0.01
+  warmup_steps: 50
+  max_grad_norm: 1.0
+  save_interval: 2
+  eval_interval: 1
+  log_interval: 10
+  device: "cuda"
+  mixed_precision: true
+  gradient_accumulation_steps: 1
+  seed: 42
+
+data:
+  seq_len: 32
+  num_workers: 4

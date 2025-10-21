@@ -17,8 +17,8 @@ class SimpleLogger:
         self.args = args
         self.timestamp = int(time.time())
         
-        # Create logs directory
-        self.logs_dir = "logs/training_logs"
+        # Create logs directory (same structure as GHN training)
+        self.logs_dir = "logs"
         os.makedirs(self.logs_dir, exist_ok=True)
         
         # Create log file

@@ -1,12 +1,12 @@
 #!/bin/bash -l
-#SBATCH --job-name=lstm
+#SBATCH --job-name=lm_training
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
 #SBATCH --comment="Language Model Training"
 #SBATCH --mail-user=slack:@ak3748       # Slack username to notify
-#SBATCH --mail-type=END
+#SBATCH --mail-type=BEGIN,END
 #SBATCH --gres=gpu:a100:1
-#SBATCH --time=0-01:00:00
+#SBATCH --time=0-06:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -41,48 +41,34 @@ echo "================================"
 echo "All required files present"
 
 export PYTHONPATH=$PYTHONPATH:./
+source venv/bin/activate
 
+echo "Virtual environment activated"
 # ===========================================
 # TRAINING PARAMETERS - MODIFY AS NEEDED
 # ===========================================
-MODEL="lstm"                    # Options: rnn, lstm, gru, gpt_encoder, mini_gpt
-EPOCHS=20                      # Number of training epochs
-BATCH_SIZE=64                   # Batch size
-D_MODEL=128                     # Model dimension
-N_LAYER=2                      # Number of layers
-N_HEAD=8                       # Number of attention heads (for transformers)
-D_FF=2048                      # Feed-forward dimension (for transformers)
-SEQ_LEN=128                     # Sequence length
-LEARNING_RATE=0.001           # Learning rate
-DEVICE="cuda"                  # Device: cuda or cpu
+
+# Configuration file to use
+CONFIG_FILE="LM/configs/benchmark_4_large.yaml"  # Change to desired config
 
 # ===========================================
 # TRAINING COMMAND
 # ===========================================
-echo "Training Parameters:"
-echo "  Model: $MODEL"
-echo "  Epochs: $EPOCHS"
-echo "  Batch Size: $BATCH_SIZE"
-echo "  D Model: $D_MODEL"
-echo "  N Layer: $N_LAYER"
-echo "  N Head: $N_HEAD"
-echo "  D FF: $D_FF"
-echo "  Seq Len: $SEQ_LEN"
-echo "  Learning Rate: $LEARNING_RATE"
-echo "  Device: $DEVICE"
-echo "================================"
 
-python train_single_model.py \
-    --model $MODEL \
-    --epochs $EPOCHS \
-    --batch_size $BATCH_SIZE \
-    --d_model $D_MODEL \
-    --n_layer $N_LAYER \
-    --n_head $N_HEAD \
-    --d_ff $D_FF \
-    --seq_len $SEQ_LEN \
-    --learning_rate $LEARNING_RATE \
-    --device $DEVICE \
-    --cache_dir "/tmp/wikitext_fixed_$(date +%s)"
+# Check if config file exists
+if [ -f "$CONFIG_FILE" ]; then
+    echo "Using config file: $CONFIG_FILE"
+    echo "================================"
+    
+    python train_lm.py --config "$CONFIG_FILE"
+    
+else
+    echo "❌ Error: Config file not found: $CONFIG_FILE"
+    echo "Available config files:"
+    ls -la LM/configs/benchmark_*.yaml 2>/dev/null || echo "  No config files found in LM/configs/"
+    echo ""
+    echo "Please set CONFIG_FILE to a valid config file path"
+    exit 1
+fi
 
 echo "Job finished at $(date)"
