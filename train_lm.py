@@ -28,7 +28,6 @@ from LM import (
     Trainer
 )
 from Dataloader.wikitext2_loader import build_wikitext2
-from simple_logger import SimpleLogger
 from Dataloader.config_loader import load_config_file, list_benchmark_configs
 
 
@@ -127,8 +126,8 @@ def main():
         data_config=data_config
     )
     
-    # Update logger with actual vocab size
-    trainer.update_logger_config(data['vocab_size'])
+    # Update config with actual vocab size
+    trainer.update_config_vocab_size(data['vocab_size'])
     
     # Train
     trainer.train()

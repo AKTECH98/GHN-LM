@@ -32,41 +32,13 @@ def parse_arguments():
     parser.add_argument('--interm_epoch', type=int, default=5, help='intermediate epochs to keep checkpoints for')
     parser.add_argument('--include_embeddings', action='store_true', help='include embedding layers in GHN prediction (default: exclude embeddings)')
     
-    # PPUDA-specific arguments
-    parser.add_argument('--epochs', type=int, default=100, help='number of training epochs')
-    parser.add_argument('--batch_size', type=int, default=32, help='batch size for training')
-    parser.add_argument('--meta_batch_size', type=int, default=16, help='batch size for meta-learning')
-    parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
-    parser.add_argument('--wd', type=float, default=1e-4, help='weight decay')
-    parser.add_argument('--momentum', type=float, default=0.9, help='momentum for SGD optimizer')
-    parser.add_argument('--opt', type=str, default='adam', choices=['adam', 'sgd', 'adamw'], help='optimizer type')
-    parser.add_argument('--scheduler', type=str, default=None, help='learning rate scheduler')
-    parser.add_argument('--lr_steps', type=int, nargs='+', default=[50, 75], help='learning rate step milestones')
-    parser.add_argument('--gamma', type=float, default=0.1, help='learning rate decay factor')
-    parser.add_argument('--grad_clip', type=float, default=1.0, help='gradient clipping value')
-    parser.add_argument('--amp', action='store_true', help='use automatic mixed precision')
-    parser.add_argument('--log_interval', type=int, default=100, help='logging interval')
+    # PPUDA-specific arguments (common training args handled by init_config)
     
     # Model architecture arguments
-    parser.add_argument('--layers', type=int, default=3, help='number of layers in GHN')
-    parser.add_argument('--hid', type=int, default=64, help='hidden dimension size')
-    parser.add_argument('--hypernet', type=str, default='gated', choices=['gated', 'mlp'], help='hypernetwork type')
-    parser.add_argument('--decoder', type=str, default='conv', choices=['conv', 'mlp'], help='decoder type')
-    parser.add_argument('--weight_norm', action='store_true', help='use weight normalization')
-    parser.add_argument('--virtual_edges', type=int, default=1, help='virtual edges configuration')
-    parser.add_argument('--ln', action='store_true', help='use layer normalization')
-    parser.add_argument('--max_shape', type=int, nargs=4, default=[1024, 1024, 1, 1], help='maximum shape for parameters')
     
-    # Data arguments
-    parser.add_argument('--data_dir', type=str, default='./data', help='data directory path')
-    parser.add_argument('--num_workers', type=int, default=4, help='number of data loading workers')
-    parser.add_argument('--device', type=str, default='cuda', choices=['cuda', 'cpu'], help='device to use')
+    # Data arguments (handled by init_config)
     
-    # System arguments
-    parser.add_argument('--save', type=str, default=None, help='directory to save checkpoints (default: Experiment/{job_id})')
-    parser.add_argument('--ckpt', type=str, default=None, help='checkpoint to resume from')
-    parser.add_argument('--debug', type=int, default=0, help='debug level')
-    parser.add_argument('--verbose', action='store_true', help='verbose output')
+    # System arguments (handled by init_config)
     
     return parser
 
@@ -150,7 +122,7 @@ def main():
     config = {'num_classes': num_classes, 'hypernet': args.hypernet,
               'decoder': args.decoder, 'weight_norm': args.weight_norm, 've': args.virtual_edges > 1,
               'layernorm': args.ln, 'hid': hid, 'layers': args.layers, 'heads': args.heads, 'is_ghn2': ghn2,
-              'exclude_embeddings': not args.include_embeddings}
+              'exclude_embeddings': not args.include_embeddings, 'max_shape': args.max_shape}
 
     ghn = GHN3(**config, debug_level=args.debug)
     

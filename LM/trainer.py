@@ -13,7 +13,6 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from simple_logger import SimpleLogger
 
 
 class Trainer:
@@ -130,27 +129,6 @@ class Trainer:
                 json.dump(experiment_config, f, indent=2)
             print(f"📋 Config saved to: {config_path}")
         
-        # Setup simple logger (will be updated with actual vocab_size after data loading)
-        if training_config and model_config and data_config:
-            config = {
-                "d_model": model_config.d_model,
-                "n_layer": model_config.n_layer,
-                "seq_len": data_config.seq_len,
-                "batch_size": training_config.batch_size,
-                "vocab_size": "TBD",  # Will be updated after data loading
-                "dropout": model_config.p_drop
-            }
-            self.logger = SimpleLogger(model_config.model_type, config, training_config, self.job_id)
-        else:
-            config = {
-                "d_model": args.d_model,
-                "n_layer": args.n_layer,
-                "seq_len": args.seq_len,
-                "batch_size": args.batch_size,
-                "vocab_size": "TBD",  # Will be updated after data loading
-                "dropout": getattr(args, 'dropout', 0.1)
-            }
-            self.logger = SimpleLogger(args.model, config, args, self.job_id)
         
         # Training state
         self.best_val_loss = float('inf')
@@ -168,11 +146,8 @@ class Trainer:
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
     
-    def update_logger_config(self, vocab_size):
-        """Update logger config with actual vocab size from tokenizer."""
-        self.logger.log_data["config"]["vocab_size"] = vocab_size
-        
-        # Also update the experiment config.json with actual vocab size
+    def update_config_vocab_size(self, vocab_size):
+        """Update experiment config.json with actual vocab size from tokenizer."""
         if hasattr(self, 'job_experiment_dir'):
             config_path = os.path.join(self.job_experiment_dir, "config.json")
             if os.path.exists(config_path):
@@ -417,13 +392,9 @@ class Trainer:
             print(f"   Best Val Loss: {self.best_val_loss:.4f}")
             print(f"   Learning Rate: {current_lr:.2e}")
         
-        # Save final log
-        self.logger.save_log()
-        summary = self.logger.get_summary()
-        
         print(f"\n🎉 Training completed!")
         print(f"   Best validation loss: {self.best_val_loss:.4f}")
-        print(f"   Model config saved to: {self.logger.log_file}")
+        print(f"   Experiment config saved to: {os.path.join(self.job_experiment_dir, 'config.json')}")
         print(f"   TensorBoard logs saved to: {os.path.join(self.logging_dir, self.job_id)}")
         print(f"   Checkpoints saved to: {self.job_experiment_dir}")
         print(f"\n📊 TensorBoard Metrics Available:")

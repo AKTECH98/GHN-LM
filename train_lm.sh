@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=lm_training
+#SBATCH --job-name=Benchmark_1_tiny
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
 #SBATCH --comment="Language Model Training"
@@ -10,7 +10,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=4g
+#SBATCH --mem=16g
 
 JOB_ID=${SLURM_JOB_ID:-local-$(date +%s)}
 NODE=${SLURMD_NODENAME:-$(hostname)}
@@ -49,7 +49,7 @@ echo "Virtual environment activated"
 # ===========================================
 
 # Configuration file to use
-CONFIG_FILE="LM/configs/benchmark_4_large.yaml"  # Change to desired config
+CONFIG_FILE="LM/configs/benchmark_1_tiny.yaml"  # Change to desired config
 
 # ===========================================
 # TRAINING COMMAND

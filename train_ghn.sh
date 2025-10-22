@@ -50,10 +50,10 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # Run GHN-3 training with enhanced features
 # Using the updated train_ghn.py script with organized config structure
 python train_ghn.py \
-    --heads 4 \
-    --layers 6 \
+    --heads 8 \
+    --layers 12 \
     --seq_len 64 \
-    --interm_epoch 1 \
+    --interm_epoch 5 \
     --epochs 100 \
     --batch_size 32 \
     --meta_batch_size 16 \
@@ -64,7 +64,8 @@ python train_ghn.py \
     --include_embeddings \
     --log_interval 10 \
     --hid 64 \
-    --hypernet gated \
-    --decoder conv
+    --hypernet gatedgnn \
+    --decoder conv \
+    --max_shape "1024,1024,1,1"
 
 echo "Job finished at $(date)"
