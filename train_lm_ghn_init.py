@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Train a single language model on WikiText-2 dataset using configuration files.
+Train a language model initialized with GHN-predicted parameters on WikiText-2 dataset.
 
 Usage:
-    python train_lm.py --config LM/configs/benchmark_1_tiny.yaml
-    python train_lm.py --config LM/configs/benchmark_2_small.yaml
-    python train_lm.py --list_configs
+    python train_lm_ghn_init.py --config LM/configs/benchmark_1_tiny.yaml --ghn_checkpoint Experiment/20917896/best_model.pt
+    python train_lm_ghn_init.py --config LM/configs/benchmark_2_small.yaml --ghn_checkpoint Experiment/20917896/best_model.pt
+    python train_lm_ghn_init.py --list_configs
 """
 
 import argparse
@@ -22,54 +22,38 @@ from tqdm import tqdm
 # Add the current directory to the path for imports
 sys.path.append(os.path.dirname(__file__))
 
-from LM import (
-    GPTEncoderLayerLM, GPTEncoderConfig,
-    GPTDecoderLM, MiniGPTConfig,
-    Trainer
-)
+from LM import Trainer
+from LM.create_model import create_model
 from Dataloader.wikitext2_loader import build_wikitext2
 from Dataloader.config_loader import load_config_file, list_benchmark_configs
+from GHN import from_pretrained, Graph
 
 
-def create_model(model_config, vocab_size):
-    """Create a model based on the model config."""
-    if model_config.model_type == "gpt_encoder":
-        config = GPTEncoderConfig(
-            vocab_size=vocab_size,
-            d_model=model_config.d_model,
-            n_layer=model_config.n_layer,
-            n_head=model_config.n_head,
-            d_ff=model_config.d_ff,
-            max_seq_len=model_config.max_seq_len,
-            p_drop=model_config.p_drop
-        )
-        return GPTEncoderLayerLM(config)
+def initialize_with_ghn(model, ghn, device, model_config, vocab_size):
+    """Initialize model parameters using GHN predictions."""
+    print("🏗️  Initializing model with GHN predictions...")
     
-    elif model_config.model_type == "mini_gpt":
-        config = MiniGPTConfig(
-            vocab_size=vocab_size,
-            d_model=model_config.d_model,
-            n_layer=model_config.n_layer,
-            n_head=model_config.n_head,
-            d_ff=model_config.d_ff,
-            max_seq_len=model_config.max_seq_len,
-            p_drop=model_config.p_drop
-        )
-        return GPTDecoderLM(config)
+    # Use the GHN model that was already loaded and passed as parameter
+    ghn.eval()
     
-    else:
-        raise ValueError(f"Unknown model type: {model_config.model_type}")
+    model = ghn(model)
+
+    return model
 
 
 def main():
     """Main function."""
-    parser = argparse.ArgumentParser(description="Train a language model on WikiText-2 using config files")
+    parser = argparse.ArgumentParser(description="Train a GHN-initialized language model on WikiText-2")
     
     # Configuration file option
-    parser.add_argument("--config", type=str, required=False,
+    parser.add_argument("--config", type=str, required=True,
                        help="Path to configuration file (YAML format)")
+    parser.add_argument("--ghn_checkpoint", type=str, required=True,
+                       help="Path to GHN checkpoint file")
     parser.add_argument("--list_configs", action="store_true",
                        help="List all available benchmark configurations and exit")
+    parser.add_argument("--save_ghn_init", action="store_true",
+                       help="Save the GHN-initialized model before training")
     
     args = parser.parse_args()
     
@@ -80,10 +64,6 @@ def main():
         for config in configs:
             print(f"  - {config}")
         return
-    
-    # Check if config is provided when not listing
-    if not args.config:
-        parser.error("--config is required when not using --list_configs")
     
     # Load configuration from file
     print(f"📋 Loading configuration from: {args.config}")
@@ -99,6 +79,15 @@ def main():
     
     # Setup device from config
     device = torch.device(training_config.device)
+    
+    # Load GHN model
+    print(f"\n🤖 Loading GHN model from: {args.ghn_checkpoint}")
+    try:
+        ghn = from_pretrained(args.ghn_checkpoint, debug_level=0).to(device)
+        print(f"   GHN parameters: {sum(p.numel() for p in ghn.parameters()):,}")
+    except Exception as e:
+        print(f"❌ Error loading GHN checkpoint: {e}")
+        return
     
     # Load dataset with config parameters
     print(f"\n📚 Loading WikiText-2 dataset...")
@@ -119,7 +108,10 @@ def main():
     model = create_model(model_config, data['vocab_size'])
     print(f"   Model parameters: {sum(p.numel() for p in model.parameters()):,}")
     
-    # Create trainer with config
+    # Initialize model with GHN predictions
+    model = initialize_with_ghn(model, ghn, device, model_config, data['vocab_size'])
+    
+    # Create trainer with config first to get experiment directory
     trainer = Trainer(
         model=model,
         train_loader=data['train_loader'],
@@ -130,8 +122,29 @@ def main():
         data_config=data_config
     )
     
+    # Save GHN-initialized model if requested
+    if args.save_ghn_init:
+        # Save in main directory (original behavior)
+        main_save_path = f"ghn_init_{model_config.model_type}_{int(time.time())}.pt"
+        torch.save(model.state_dict(), main_save_path)
+        print(f"💾 GHN-initialized model saved to: {main_save_path}")
+        
+        # Also save in experiment directory as zero_epoch.pt
+        exp_save_path = os.path.join(trainer.job_experiment_dir, "zero_epoch.pt")
+        torch.save(model.state_dict(), exp_save_path)
+        print(f"💾 GHN-initialized model also saved to: {exp_save_path}")
+    
     # Update config with actual vocab size
     trainer.update_config_vocab_size(data['vocab_size'])
+    
+    # Add GHN initialization info to trainer
+    trainer.ghn_initialized = True
+    trainer.ghn_checkpoint = args.ghn_checkpoint
+    
+    print(f"\n🚀 Starting training with GHN-initialized model...")
+    print(f"   Model: {model_config.model_type}")
+    print(f"   Parameters: {sum(p.numel() for p in model.parameters()):,}")
+    print(f"   GHN checkpoint: {args.ghn_checkpoint}")
     
     # Train
     trainer.train()

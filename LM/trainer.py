@@ -29,10 +29,11 @@ class Trainer:
         self.data_config = data_config
         
         # Get job ID from environment or generate one (same as GHN training)
-        self.job_id = os.environ.get('SLURM_JOB_ID', f'lm_{int(time.time())}')
+        # Check for custom job ID first (from training script), then SLURM, then generate
+        self.job_id = os.environ.get('JOB_ID', os.environ.get('SLURM_JOB_ID', f'lm_{int(time.time())}'))
         
         # Create directory structure (same as GHN training)
-        self.logging_dir = 'logging'
+        self.logging_dir = 'tensor_log'
         self.experiment_dir = 'Experiment'
         self.job_experiment_dir = os.path.join(self.experiment_dir, self.job_id)
         
@@ -134,6 +135,12 @@ class Trainer:
         self.best_val_loss = float('inf')
         self.train_losses = []
         self.val_losses = []
+        
+        # Early stopping parameters
+        self.early_stopping_patience = getattr(training_config, 'early_stopping_patience', 3) if training_config else getattr(args, 'early_stopping_patience', 3)
+        self.early_stopping_min_delta = getattr(training_config, 'early_stopping_min_delta', 0.001) if training_config else getattr(args, 'early_stopping_min_delta', 0.001)
+        self.early_stopping_counter = 0
+        self.early_stopping_best_loss = float('inf')
     
     def _set_seed(self, seed):
         """Set random seeds for reproducibility."""
@@ -145,6 +152,18 @@ class Trainer:
         # For deterministic behavior (may be slower)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
+    
+    def _check_early_stopping(self, val_loss):
+        """Check if early stopping criteria is met."""
+        if val_loss < self.early_stopping_best_loss - self.early_stopping_min_delta:
+            self.early_stopping_best_loss = val_loss
+            self.early_stopping_counter = 0
+            return False
+        else:
+            self.early_stopping_counter += 1
+            if self.early_stopping_counter >= self.early_stopping_patience:
+                return True
+            return False
     
     def update_config_vocab_size(self, vocab_size):
         """Update experiment config.json with actual vocab size from tokenizer."""
@@ -385,18 +404,32 @@ class Trainer:
             
             self.save_checkpoint(epoch, val_loss, is_best)
             
+            # Check for early stopping
+            should_stop = self._check_early_stopping(val_loss)
+            
             # Print epoch summary
             print(f"\n📊 Epoch {epoch+1} Summary:")
             print(f"   Train Loss: {train_loss:.4f}")
             print(f"   Val Loss: {val_loss:.4f}")
             print(f"   Best Val Loss: {self.best_val_loss:.4f}")
             print(f"   Learning Rate: {current_lr:.2e}")
+            print(f"   Early Stopping Counter: {self.early_stopping_counter}/{self.early_stopping_patience}")
+            
+            # Early stopping check
+            if should_stop:
+                print(f"\n🛑 Early stopping triggered!")
+                print(f"   Validation loss hasn't improved by at least {self.early_stopping_min_delta:.4f}")
+                print(f"   for {self.early_stopping_patience} consecutive epochs")
+                print(f"   Best validation loss: {self.early_stopping_best_loss:.4f}")
+                break
         
         print(f"\n🎉 Training completed!")
         print(f"   Best validation loss: {self.best_val_loss:.4f}")
         print(f"   Experiment config saved to: {os.path.join(self.job_experiment_dir, 'config.json')}")
         print(f"   TensorBoard logs saved to: {os.path.join(self.logging_dir, self.job_id)}")
         print(f"   Checkpoints saved to: {self.job_experiment_dir}")
+        if should_stop:
+            print(f"   Training stopped early due to no improvement in validation loss")
         print(f"\n📊 TensorBoard Metrics Available:")
         print(f"   - Train/Loss: Batch-level training losses")
         print(f"   - Val/Loss: Epoch-level validation losses")

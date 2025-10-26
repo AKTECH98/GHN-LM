@@ -141,11 +141,8 @@ def _create_base_config(name: str, model_type: str, d_model: int, n_layers: int,
         'p_drop': 0.1,
     }
     
-    # Add model-specific parameters
-    if model_type in ['rnn', 'lstm', 'gru']:
-        config['hidden_size'] = d_model
-    elif model_type in ['gpt_encoder', 'mini_gpt']:
-        config['tie_weights'] = False  # Important for GHN compatibility
+    # Set tie_weights to False for all model types for GHN compatibility
+    config['tie_weights'] = False  # Important for GHN compatibility
     
     return config
 

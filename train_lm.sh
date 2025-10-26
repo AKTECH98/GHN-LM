@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=Benchmark_1_tiny
+#SBATCH --job-name=Benchmark_5_mini_gpt
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
 #SBATCH --comment="Language Model Training"
@@ -12,13 +12,19 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16g
 
-JOB_ID=${SLURM_JOB_ID:-local-$(date +%s)}
+# Extract job name from SLURM_JOB_NAME or use default
+JOB_NAME=${SLURM_JOB_NAME}
+# Create Job ID from job name and date
+JOB_ID="${JOB_NAME}_$(date +%s)"
 NODE=${SLURMD_NODENAME:-$(hostname)}
+
+# Export JOB_ID for use by the training script
+export JOB_ID
 
 # --- logging setup ---
 LOG_DIR="logs"
 mkdir -p "$LOG_DIR"
-JOB_TAG="LM_${JOB_ID}"
+JOB_TAG="${JOB_ID}"
 OUT_FILE="$LOG_DIR/${JOB_TAG}.out"
 ERR_FILE="$LOG_DIR/${JOB_TAG}.err"
 LOG_FILE="$LOG_DIR/${JOB_TAG}.log"
@@ -49,7 +55,7 @@ echo "Virtual environment activated"
 # ===========================================
 
 # Configuration file to use
-CONFIG_FILE="LM/configs/benchmark_1_tiny.yaml"  # Change to desired config
+CONFIG_FILE="LM/configs/benchmark_5_mini_gpt.yaml"  # Change to desired config
 
 # ===========================================
 # TRAINING COMMAND

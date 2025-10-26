@@ -455,7 +455,7 @@ class Trainer:
                                                      graphs.to_device(self.device),
                                                      bn_track_running_stats=True,
                                                      keep_grads=True,
-                                                     reduce_graph=True
+                                                     reduce_graph=False
                                                      )
                     else:
                         # Fallback to original behavior
@@ -471,7 +471,7 @@ class Trainer:
                                                      graphs.to_device(self.device),
                                                      bn_track_running_stats=True,
                                                      keep_grads=True,
-                                                     reduce_graph=True
+                                                     reduce_graph=False
                                                      )
                     
                     if self.predparam_wd > 0:

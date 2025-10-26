@@ -38,6 +38,8 @@ class TrainingConfig:
     mixed_precision: bool
     gradient_accumulation_steps: int
     seed: int = None
+    early_stopping_patience: int = 3
+    early_stopping_min_delta: float = 0.001
 
 
 @dataclass

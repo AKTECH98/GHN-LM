@@ -12,13 +12,19 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32g
 
-JOB_ID=${SLURM_JOB_ID:-local-$(date +%s)}
+# Extract job name from SLURM_JOB_NAME or use default
+JOB_NAME=${SLURM_JOB_NAME:-GHN_LM}
+# Create Job ID from job name and date
+JOB_ID="${JOB_NAME}_$(date +%s)"
 NODE=${SLURMD_NODENAME:-$(hostname)}
+
+# Export JOB_ID for use by the training script
+export JOB_ID
 
 # --- logging setup ---
 LOG_DIR="logs"
 mkdir -p "$LOG_DIR"
-JOB_TAG="GHN_LM_${JOB_ID}"
+JOB_TAG="${JOB_ID}"
 OUT_FILE="$LOG_DIR/${JOB_TAG}.out"
 ERR_FILE="$LOG_DIR/${JOB_TAG}.err"
 LOG_FILE="$LOG_DIR/${JOB_TAG}.log"
@@ -50,22 +56,24 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # Run GHN-3 training with enhanced features
 # Using the updated train_ghn.py script with organized config structure
 python train_ghn.py \
-    --heads 8 \
-    --layers 12 \
+    --model_name "GHN-3-T-2H" \
+    --heads 2\
+    --layers 3 \
     --seq_len 64 \
-    --interm_epoch 5 \
-    --epochs 100 \
-    --batch_size 32 \
-    --meta_batch_size 16 \
-    --lr 0.001 \
-    --wd 0.0001 \
+    --interm_epoch 1 \
+    --save "Experiment/GHN-3-T-2H" \
+    --epochs 75 \
+    --batch_size 16 \
+    --meta_batch_size 4 \
+    --lr 0.0004 \
+    --wd 0.01 \
     --opt adam \
     --amp \
     --include_embeddings \
     --log_interval 10 \
-    --hid 64 \
+    --hid 32 \
     --hypernet gatedgnn \
     --decoder conv \
-    --max_shape "1024,1024,1,1"
+    --max_shape "512,512,1,1"
 
 echo "Job finished at $(date)"

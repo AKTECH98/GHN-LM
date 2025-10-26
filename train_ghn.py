@@ -22,7 +22,9 @@ log = partial(log, flush=True)
 def parse_arguments():
     """Parse command line arguments for GHN training."""
     parser = argparse.ArgumentParser(description='GHN-3 training for Language Models')
-    
+
+    parser.add_argument("--model_name", type=str, default=None, help='name of the model')
+
     # GHN-specific arguments
     parser.add_argument("--seq_len", type=int, default=256, help='sequence length for the language model')
     parser.add_argument('--heads', type=int, default=8, help='number of self-attention heads in GHN-3')
@@ -52,11 +54,10 @@ def main():
     ddp = setup_ddp()
     args = init_config(mode='train_ghn', parser=parser, verbose=ddp.rank == 0,
                        debug=0,   # to avoid extra sanity checks and make training faster
-                       layers=3,  # default number of layers in GHN-3
                        shape_multiplier=2 if ghn2 else 1)  # max_shape default setting (can be overriden by --max_shape)
     
     # Get job ID from environment or generate one
-    job_id = os.environ.get('SLURM_JOB_ID', f'ghn3_lm_{int(time.time())}')
+    job_id = args.model_name #os.environ.get('SLURM_JOB_ID', f'ghn3_lm_{int(time.time())}')
     
     # Create directory structure
     logging_dir = 'logging'
@@ -107,7 +108,7 @@ def main():
     arch_loader, arch_configs = build_ghn_variants_dataloader(
         batch_size=args.meta_batch_size // (ddp.world_size if ddp.ddp else 1),
         vocab_size=num_classes,
-        max_len=max(args.seq_len * 2, 1024),  # Ensure max_len is at least 2x seq_len
+        max_len=args.seq_len,  # Match model max_seq_len to training seq_len
         device=args.device,
         num_workers=args.num_workers,
         ve_cutoff=args.virtual_edges,

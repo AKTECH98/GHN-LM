@@ -8,7 +8,7 @@ model:
   n_layer: 6
   n_head: 6
   d_ff: 1536
-  max_seq_len: 128
+  max_seq_len: 64
   p_drop: 0.1
 
 training:
@@ -25,7 +25,9 @@ training:
   mixed_precision: true
   gradient_accumulation_steps: 3
   seed: 42
+  early_stopping_patience: 5
+  early_stopping_min_delta: 0.001
 
 data:
-  seq_len: 128
+  seq_len: 64
   num_workers: 4

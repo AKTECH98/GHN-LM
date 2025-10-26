@@ -25,6 +25,8 @@ training:
   mixed_precision: true
   gradient_accumulation_steps: 1
   seed: 42
+  early_stopping_patience: 5
+  early_stopping_min_delta: 0.001
 
 data:
   seq_len: 64
