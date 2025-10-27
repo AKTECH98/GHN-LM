@@ -1,0 +1,33 @@
+# Benchmark 7: Mini GPT Small Configuration
+# ~15M parameters - Small mini GPT variant
+
+model:
+  model_type: "mini_gpt"
+  vocab_size: 50257
+  d_model: 320
+  n_layer: 5
+  n_head: 5
+  d_ff: 1280
+  max_seq_len: 64
+  p_drop: 0.1
+
+training:
+  epochs: 45
+  batch_size: 8
+  learning_rate: 0.0005
+  weight_decay: 0.01
+  warmup_steps: 450
+  max_grad_norm: 1.0
+  save_interval: 9
+  eval_interval: 4
+  log_interval: 45
+  device: "cuda"
+  mixed_precision: true
+  gradient_accumulation_steps: 2
+  seed: 42
+  early_stopping_patience: 1
+  early_stopping_min_delta: 0.001
+
+data:
+  seq_len: 64
+  num_workers: 4

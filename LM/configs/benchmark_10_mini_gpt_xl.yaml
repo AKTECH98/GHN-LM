@@ -1,0 +1,33 @@
+# Benchmark 10: Mini GPT XL Configuration
+# ~100M parameters - Extra large mini GPT variant
+
+model:
+  model_type: "mini_gpt"
+  vocab_size: 50257
+  d_model: 640
+  n_layer: 10
+  n_head: 10
+  d_ff: 2560
+  max_seq_len: 64
+  p_drop: 0.1
+
+training:
+  epochs: 120
+  batch_size: 3
+  learning_rate: 0.00025
+  weight_decay: 0.01
+  warmup_steps: 1200
+  max_grad_norm: 1.0
+  save_interval: 24
+  eval_interval: 8
+  log_interval: 120
+  device: "cuda"
+  mixed_precision: true
+  gradient_accumulation_steps: 5
+  seed: 42
+  early_stopping_patience: 10
+  early_stopping_min_delta: 0.001
+
+data:
+  seq_len: 64
+  num_workers: 4
