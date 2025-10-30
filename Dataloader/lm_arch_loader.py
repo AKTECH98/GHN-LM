@@ -2,8 +2,12 @@
 Language Model Architecture Loader for GHN-3 Training.
 
 This module provides comprehensive language model architecture datasets for training
-Graph HyperNetworks (GHN-3) on language modeling tasks. It supports GPT-based
-Transformer variants.
+Graph HyperNetworks (GHN-3) on language modeling tasks. It supports:
+
+- Custom GPT-based Transformer variants (GPT Encoder, Mini GPT)
+- HuggingFace Transformers models (GPT-2, GPT-Neo, GPT-J, Mistral, MPT, etc.)
+- Comprehensive parameter space exploration
+- Real architectural differences preserved through Transformers library
 """
 
 from typing import Dict, List, Optional
@@ -20,7 +24,8 @@ from GHN.graph import Graph, GraphBatch
 # Import the available model architectures
 from LM import (
     GPTEncoderLayerLM, GPTEncoderConfig,
-    GPTDecoderLM, MiniGPTConfig
+    GPTDecoderLM, MiniGPTConfig,
+    TransformersLM, TransformersConfig, OSS_MODEL_CONFIGS
 )
 
 
@@ -52,7 +57,7 @@ def create_model_from_config(model_type: str, config: Dict, device: str = 'cpu')
     Factory function to create different types of language models.
     
     Args:
-        model_type: Type of model ('gpt_encoder', 'mini_gpt')
+        model_type: Type of model ('gpt_encoder', 'mini_gpt', 'transformers')
         config: Model configuration dictionary
         device: Device to create model on
     
@@ -65,15 +70,22 @@ def create_model_from_config(model_type: str, config: Dict, device: str = 'cpu')
     model_type = model_type.lower()
     config_copy = config.copy()
     
+    # Remove metadata fields that shouldn't be passed to model constructor
+    metadata_fields = ['name', 'model_type']
+    for field in metadata_fields:
+        config_copy.pop(field, None)
+    
     # Parameter mapping for different model types
     if model_type in ['gpt_encoder', 'mini_gpt']:
         # Transformer-based models: map parameters
         _map_transformer_params(config_copy)
         model = _create_transformer_model(model_type, config_copy)
-        
+    elif model_type == 'transformers':
+        # HuggingFace Transformers models
+        model = _create_transformers_model(config_copy)
     else:
         raise ValueError(f"Unknown model type: {model_type}. "
-                        f"Supported types: gpt_encoder, mini_gpt")
+                        f"Supported types: gpt_encoder, mini_gpt, transformers")
     
     return model.to(device)
 
@@ -86,6 +98,9 @@ def _map_transformer_params(config: Dict) -> None:
         config['n_head'] = config.pop('n_heads')
     if 'max_len' in config:
         config['max_seq_len'] = config.pop('max_len')
+    if 'mlp_ratio' in config:
+        config['d_ff'] = int(config['mlp_ratio'] * config['d_model'])
+        config.pop('mlp_ratio')
 
 
 def _create_transformer_model(model_type: str, config: Dict):
@@ -96,6 +111,11 @@ def _create_transformer_model(model_type: str, config: Dict):
         return GPTDecoderLM(MiniGPTConfig(**config))
     else:
         raise ValueError(f"Unknown Transformer model type: {model_type}")
+
+
+def _create_transformers_model(config: Dict):
+    """Create HuggingFace Transformers model."""
+    return TransformersLM(TransformersConfig(**config))
 
 
 # Legacy dataset classes removed - use GHNLMVariantsDataset for comprehensive coverage
@@ -156,11 +176,12 @@ def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024) -> List[
     Generate comprehensive language model configurations for GHN training.
     
     Creates ALL possible combinations of model architectures with the following coverage:
-    - Model types: GPT Encoder, Mini GPT
+    - Model types: GPT Encoder, Mini GPT, HuggingFace Transformers
     - Layers: 1-16 (extensive range)
     - Dimensions: 32-2048 (comprehensive range of model sizes)
     - Attention heads: 1-32 (all valid divisors of d_model)
     - MLP ratios: 1.0-8.0 (all reasonable feed-forward ratios)
+    - Open Source GPT models: GPT-2, GPT-Neo, GPT-J, Mistral, MPT (real architectures)
     
     Args:
         vocab_size: Vocabulary size for language models
@@ -180,6 +201,9 @@ def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024) -> List[
     # Generate Transformer variants
     variants.extend(_generate_transformer_variants(d_models, layer_counts, mlp_ratios, max_len, vocab_size))
     
+    # Generate Open Source GPT variants
+    variants.extend(_generate_oss_gpt_variants(max_len, vocab_size))
+    
     return variants
 
 
@@ -194,14 +218,56 @@ def _generate_transformer_variants(d_models: List[int], layer_counts: List[int],
             
             for n_heads in valid_heads:
                 for mlp_ratio in mlp_ratios:
-                    # Size limits for different transformer types
-                    if d_model * n_layers <= 8192:  # GPT Encoder
-                        name = f"gpt-encoder-{n_layers}L-{d_model}d-h{n_heads}-r{mlp_ratio}"
-                        variants.append(_create_base_config(name, "gpt_encoder", d_model, n_layers, n_heads, mlp_ratio, max_len, vocab_size))
+                    # Generate all variants without size limits
+                    name = f"gpt-encoder-{n_layers}L-{d_model}d-h{n_heads}-r{mlp_ratio}"
+                    variants.append(_create_base_config(name, "gpt_encoder", d_model, n_layers, n_heads, mlp_ratio, max_len, vocab_size))
                     
-                    if d_model * n_layers <= 6144:  # Mini GPT
-                        name = f"mini-gpt-{n_layers}L-{d_model}d-h{n_heads}-r{mlp_ratio}"
-                        variants.append(_create_base_config(name, "mini_gpt", d_model, n_layers, n_heads, mlp_ratio, max_len, vocab_size))
+                    name = f"mini-gpt-{n_layers}L-{d_model}d-h{n_heads}-r{mlp_ratio}"
+                    variants.append(_create_base_config(name, "mini_gpt", d_model, n_layers, n_heads, mlp_ratio, max_len, vocab_size))
+    
+    return variants
+
+
+def _generate_oss_gpt_variants(max_len: int, vocab_size: int) -> List[Dict]:
+    """
+    Generate Open Source GPT model variants using HuggingFace Transformers.
+    
+    Uses pre-defined configurations for popular OSS models with their actual
+    architectural differences preserved through the Transformers library.
+    
+    Supported models:
+    - GPT-2: Small, Medium, Large, XL variants
+    - GPT-Neo: 125M, 1.3B, 2.7B variants
+    - GPT-J: 6B variant
+    - Mistral: 7B variant
+    - MPT: 7B variant
+    
+    Args:
+        max_len: Maximum sequence length
+        vocab_size: Vocabulary size
+        
+    Returns:
+        List of OSS GPT model configuration dictionaries
+    """
+    variants = []
+    
+    # Generate variants for each OSS configuration
+    for model_name, config in OSS_MODEL_CONFIGS.items():
+        # Create variant configuration
+        variant = {
+            'name': model_name,
+            'model_type': 'transformers',
+            'model_name': config['model_name'],
+            'vocab_size': vocab_size,
+            'd_model': config['d_model'],
+            'n_layers': config['n_layer'],
+            'n_heads': config['n_head'],
+            'd_ff': config['d_ff'],
+            'max_len': min(max_len, config['max_seq_len']),  # Use smaller of the two
+            'p_drop': 0.1,
+            'tie_weights': False,
+        }
+        variants.append(variant)
     
     return variants
 

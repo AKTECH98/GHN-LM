@@ -60,9 +60,9 @@ def build_wikitext2(
     cache_dir: Optional[str] = None,
 ) -> Dict:
     """
-    Build WikiText-2 train/validation DataLoaders with fixed-length blocks.
+    Build WikiText-2 train/validation/test DataLoaders with fixed-length blocks.
 
-    Returns dict with: tokenizer, vocab_size, train_loader, val_loader.
+    Returns dict with: tokenizer, vocab_size, train_loader, val_loader, test_loader.
     """
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=cache_dir)
     if tokenizer.pad_token is None:
@@ -90,6 +90,7 @@ def build_wikitext2(
     columns = ["input_ids", "attention_mask", "labels"]
     lm_ds["train"].set_format(type="torch", columns=columns)
     lm_ds["validation"].set_format(type="torch", columns=columns)
+    lm_ds["test"].set_format(type="torch", columns=columns)
 
     train_loader = DataLoader(
         lm_ds["train"],
@@ -109,11 +110,21 @@ def build_wikitext2(
         collate_fn=_collate_wikitext2,
     )
 
+    test_loader = DataLoader(
+        lm_ds["test"],
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=torch.cuda.is_available(),
+        collate_fn=_collate_wikitext2,
+    )
+
     return {
         "tokenizer": tokenizer,
         "vocab_size": len(tokenizer),
         "train_loader": train_loader,
         "val_loader": val_loader,
+        "test_loader": test_loader,
     }
 
 

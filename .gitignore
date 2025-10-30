@@ -34,3 +34,4 @@ start_tensorboard.sh
 
 # Virtual environment
 venv/
+Analysis/

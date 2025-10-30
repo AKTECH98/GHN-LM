@@ -60,7 +60,7 @@ def main():
     job_id = args.model_name #os.environ.get('SLURM_JOB_ID', f'ghn3_lm_{int(time.time())}')
     
     # Create directory structure
-    logging_dir = 'logging'
+    logging_dir = 'tensor_log'
     experiment_dir = 'Experiment'
     job_experiment_dir = os.path.join(experiment_dir, job_id)
     

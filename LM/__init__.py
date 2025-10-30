@@ -7,15 +7,19 @@ and shared components for easy experimentation and comparison.
 Available Models:
 - GPT Encoder: GPT-style model using TransformerEncoder with causal mask
 - Mini GPT: Mini GPT with explicit decoder blocks
+- Transformers Wrapper: HuggingFace Transformers models (GPT-2, GPT-Neo, Mistral, etc.)
 
 Usage:
-    from models import create_model
+    from LM import create_model_from_config
     
-    # Create a model using the factory
-    model = create_model("gpt_encoder", vocab_size=10000, d_model=256, n_layer=2)
+    # Create a custom model
+    model = create_model_from_config("gpt_encoder", config_dict)
+    
+    # Create a HuggingFace model
+    model = create_model_from_config("transformers", config_dict)
     
     # Or import specific models directly
-    from models import GPTEncoderLayerLM, GPTEncoderConfig
+    from LM import GPTEncoderLayerLM, GPTEncoderConfig, TransformersLM
     config = GPTEncoderConfig(vocab_size=10000, d_model=256, n_layer=2)
     model = GPTEncoderLayerLM(config)
 """
@@ -26,6 +30,7 @@ from .base import BaseConfig, BaseLanguageModel, EmbeddingLayer, LMHead
 # Import individual models
 from .gpt_encoder_lm import GPTEncoderLayerLM, GPTConfig as GPTEncoderConfig
 from .mini_gpt import GPTDecoderLM, GPTConfig as MiniGPTConfig
+from .transformers_wrapper import TransformersLM, TransformersConfig, create_transformers_model, OSS_MODEL_CONFIGS
 
 # Import trainer
 from .trainer import Trainer
@@ -43,6 +48,10 @@ __all__ = [
     "GPTEncoderConfig",
     "GPTDecoderLM",
     "MiniGPTConfig",
+    "TransformersLM",
+    "TransformersConfig",
+    "create_transformers_model",
+    "OSS_MODEL_CONFIGS",
     
     # Trainer
     "Trainer",
