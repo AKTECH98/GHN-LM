@@ -34,6 +34,14 @@ def parse_arguments():
     parser.add_argument('--interm_epoch', type=int, default=5, help='intermediate epochs to keep checkpoints for')
     parser.add_argument('--include_embeddings', action='store_true', help='include embedding layers in GHN prediction (default: exclude embeddings)')
     
+    # OSS model filtering arguments
+    parser.add_argument('--max_oss_d_model', type=int, default=None, 
+                       help='Maximum d_model for OSS models (filters large models). Suggested: 2048 for <30GB, 768 for <10GB memory')
+    parser.add_argument('--max_oss_layers', type=int, default=None,
+                       help='Maximum layers for OSS models (filters deep models). Suggested: 24 for <30GB, 12 for <10GB memory')
+    parser.add_argument('--exclude_large_oss', action='store_true',
+                       help='Exclude all OSS models with >1B parameters (GPT-J-6B, Mistral-7B, MPT-7B, GPT-Neo-2.7B, GPT-2-XL). Recommended for <30GB GPU')
+    
     # PPUDA-specific arguments (common training args handled by init_config)
     
     # Model architecture arguments
@@ -113,8 +121,22 @@ def main():
         num_workers=args.num_workers,
         ve_cutoff=args.virtual_edges,
         dense=True,  # GHN-3 requires dense graphs
-        exclude_embeddings=not args.include_embeddings  # Convert include_embeddings to exclude_embeddings
+        exclude_embeddings=not args.include_embeddings,  # Convert include_embeddings to exclude_embeddings
+        max_oss_d_model=args.max_oss_d_model,
+        max_oss_layers=args.max_oss_layers,
+        exclude_large_oss=args.exclude_large_oss
     )
+    
+    # Log filtering info
+    if args.exclude_large_oss or args.max_oss_d_model or args.max_oss_layers:
+        log('OSS model filtering enabled:')
+        if args.exclude_large_oss:
+            log('  - Excluding large OSS models (>1B parameters)')
+        if args.max_oss_d_model:
+            log(f'  - Max d_model for OSS: {args.max_oss_d_model}')
+        if args.max_oss_layers:
+            log(f'  - Max layers for OSS: {args.max_oss_layers}')
+    log(f'Total architecture variants: {len(arch_configs):,}')
     
     
 

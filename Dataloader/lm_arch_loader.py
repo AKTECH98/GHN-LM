@@ -171,7 +171,10 @@ def _create_base_config(name: str, model_type: str, d_model: int, n_layers: int,
 # Model Configuration Generation
 # =============================================================================
 
-def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024) -> List[Dict]:
+def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024, 
+                          max_oss_d_model: Optional[int] = None,
+                          max_oss_layers: Optional[int] = None,
+                          exclude_large_oss: bool = False) -> List[Dict]:
     """
     Generate comprehensive language model configurations for GHN training.
     
@@ -186,6 +189,12 @@ def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024) -> List[
     Args:
         vocab_size: Vocabulary size for language models
         max_len: Maximum sequence length
+        max_oss_d_model: Maximum d_model for OSS models (filters out larger models). 
+                        Default None = no limit. Suggested: 2048 for <30GB memory, 768 for <10GB
+        max_oss_layers: Maximum layers for OSS models (filters out deeper models).
+                       Default None = no limit. Suggested: 24 for <30GB memory, 12 for <10GB
+        exclude_large_oss: If True, excludes all OSS models with >1B parameters.
+                          Convenient shortcut to exclude GPT-J-6B, Mistral-7B, MPT-7B, GPT-Neo-2.7B
         
     Returns:
         List of model configuration dictionaries
@@ -201,8 +210,11 @@ def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024) -> List[
     # Generate Transformer variants
     variants.extend(_generate_transformer_variants(d_models, layer_counts, mlp_ratios, max_len, vocab_size))
     
-    # Generate Open Source GPT variants
-    variants.extend(_generate_oss_gpt_variants(max_len, vocab_size))
+    # Generate Open Source GPT variants with filtering
+    variants.extend(_generate_oss_gpt_variants(max_len, vocab_size, 
+                                               max_d_model=max_oss_d_model,
+                                               max_layers=max_oss_layers,
+                                               exclude_large=exclude_large_oss))
     
     return variants
 
@@ -228,7 +240,10 @@ def _generate_transformer_variants(d_models: List[int], layer_counts: List[int],
     return variants
 
 
-def _generate_oss_gpt_variants(max_len: int, vocab_size: int) -> List[Dict]:
+def _generate_oss_gpt_variants(max_len: int, vocab_size: int,
+                               max_d_model: Optional[int] = None,
+                               max_layers: Optional[int] = None,
+                               exclude_large: bool = False) -> List[Dict]:
     """
     Generate Open Source GPT model variants using HuggingFace Transformers.
     
@@ -245,14 +260,30 @@ def _generate_oss_gpt_variants(max_len: int, vocab_size: int) -> List[Dict]:
     Args:
         max_len: Maximum sequence length
         vocab_size: Vocabulary size
+        max_d_model: Maximum d_model for filtering (None = no filter)
+        max_layers: Maximum layers for filtering (None = no filter)
+        exclude_large: If True, excludes models with >1B parameters (GPT-J, Mistral, MPT, GPT-Neo-2.7B)
         
     Returns:
         List of OSS GPT model configuration dictionaries
     """
     variants = []
     
+    # Models with >1B parameters (approximate)
+    large_models = {'gpt-j-6b', 'mistral-7b', 'mpt-7b', 'gpt-neo-2.7b', 'gpt2-xl'}
+    
     # Generate variants for each OSS configuration
     for model_name, config in OSS_MODEL_CONFIGS.items():
+        # Apply filters
+        if exclude_large and model_name in large_models:
+            continue  # Skip large models
+        
+        if max_d_model is not None and config['d_model'] > max_d_model:
+            continue  # Skip models larger than max_d_model
+        
+        if max_layers is not None and config['n_layer'] > max_layers:
+            continue  # Skip models deeper than max_layers
+        
         # Create variant configuration
         variant = {
             'name': model_name,
@@ -290,7 +321,10 @@ class GHNLMVariantsDataset(Dataset):
 
     def __init__(self, vocab_size: int = 50257, max_len: int = 1024, 
                  device: Optional[str] = None, ve_cutoff: int = 50, dense: bool = True, 
-                 exclude_embeddings: bool = True):
+                 exclude_embeddings: bool = True,
+                 max_oss_d_model: Optional[int] = None,
+                 max_oss_layers: Optional[int] = None,
+                 exclude_large_oss: bool = False):
         """
         Initialize the dataset.
         
@@ -300,12 +334,18 @@ class GHNLMVariantsDataset(Dataset):
             device: Device to create models on
             ve_cutoff: Virtual edge cutoff for graph construction
             dense: Whether to use dense graphs
+            max_oss_d_model: Maximum d_model for OSS models (filters large models)
+            max_oss_layers: Maximum layers for OSS models (filters deep models)
+            exclude_large_oss: If True, excludes all OSS models with >1B parameters
         """
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.ve_cutoff = ve_cutoff
         self.dense = dense
         self.exclude_embeddings = exclude_embeddings
-        self.configs = ghn_training_variants(vocab_size=vocab_size, max_len=max_len)
+        self.configs = ghn_training_variants(vocab_size=vocab_size, max_len=max_len,
+                                            max_oss_d_model=max_oss_d_model,
+                                            max_oss_layers=max_oss_layers,
+                                            exclude_large_oss=exclude_large_oss)
 
     def __len__(self) -> int:
         """Return the number of model configurations."""
@@ -348,6 +388,9 @@ def build_ghn_variants_dataloader(
     dense: bool = True,
     shuffle: bool = True,
     exclude_embeddings: bool = True,
+    max_oss_d_model: Optional[int] = None,
+    max_oss_layers: Optional[int] = None,
+    exclude_large_oss: bool = False,
 ):
     """
     Build a DataLoader for GHN training with comprehensive LM variants.
@@ -361,6 +404,13 @@ def build_ghn_variants_dataloader(
         ve_cutoff: Virtual edge cutoff for graph construction
         dense: Whether to use dense graphs
         shuffle: Whether to shuffle the dataset
+        exclude_embeddings: Whether to exclude embedding layers from GHN prediction
+        max_oss_d_model: Maximum d_model for OSS models (None = no limit)
+                        Suggested: 2048 for <30GB, 768 for <10GB memory
+        max_oss_layers: Maximum layers for OSS models (None = no limit)
+                       Suggested: 24 for <30GB, 12 for <10GB memory
+        exclude_large_oss: If True, excludes all OSS models with >1B parameters
+                          (GPT-J-6B, Mistral-7B, MPT-7B, GPT-Neo-2.7B, GPT-2-XL)
         
     Returns:
         Tuple of (DataLoader, configs) where DataLoader yields (models, graph_batch, metas)
@@ -371,7 +421,10 @@ def build_ghn_variants_dataloader(
         device=device, 
         ve_cutoff=ve_cutoff, 
         dense=dense,
-        exclude_embeddings=exclude_embeddings
+        exclude_embeddings=exclude_embeddings,
+        max_oss_d_model=max_oss_d_model,
+        max_oss_layers=max_oss_layers,
+        exclude_large_oss=exclude_large_oss
     )
 
     def collate_fn(items):

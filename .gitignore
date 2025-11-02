@@ -35,3 +35,7 @@ start_tensorboard.sh
 # Virtual environment
 venv/
 Analysis/
+Report/
+
+# Plots and visualizations
+perplexity_plots/
