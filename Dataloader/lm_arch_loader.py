@@ -118,9 +118,6 @@ def _create_transformers_model(config: Dict):
     return TransformersLM(TransformersConfig(**config))
 
 
-# Legacy dataset classes removed - use GHNLMVariantsDataset for comprehensive coverage
-
-
 # =============================================================================
 # Module Exports
 # =============================================================================

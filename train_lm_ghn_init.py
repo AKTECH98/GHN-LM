@@ -10,34 +10,32 @@ Usage:
 
 import argparse
 import os
-import sys
 import time
 
 import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
-
-# Add the current directory to the path for imports
-sys.path.append(os.path.dirname(__file__))
 
 from LM import Trainer
 from LM.create_model import create_model
 from Dataloader.wikitext2_loader import build_wikitext2
 from Dataloader.config_loader import load_config_file, list_benchmark_configs
-from GHN import from_pretrained, Graph
+from GHN import from_pretrained
 
 
-def initialize_with_ghn(model, ghn, device, model_config, vocab_size):
-    """Initialize model parameters using GHN predictions."""
+def initialize_with_ghn(model, ghn):
+    """Initialize model parameters using GHN predictions.
+    
+    Args:
+        model: Language model to initialize
+        ghn: Pretrained GHN model
+    
+    Returns:
+        Model with GHN-predicted parameters
+    """
     print("🏗️  Initializing model with GHN predictions...")
     
-    # Use the GHN model that was already loaded and passed as parameter
     ghn.eval()
-    
     model = ghn(model)
-
+    
     return model
 
 
@@ -109,7 +107,7 @@ def main():
     print(f"   Model parameters: {sum(p.numel() for p in model.parameters()):,}")
     
     # Initialize model with GHN predictions
-    model = initialize_with_ghn(model, ghn, device, model_config, data['vocab_size'])
+    model = initialize_with_ghn(model, ghn)
     
     # Create trainer with config first to get experiment directory
     trainer = Trainer(

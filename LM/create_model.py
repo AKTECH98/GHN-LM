@@ -11,11 +11,8 @@ Usage:
 
 import argparse
 import os
-import sys
-import torch
 
-# Add the current directory to the path for imports
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+import torch
 
 from LM import (
     GPTEncoderLayerLM, GPTEncoderConfig,
@@ -85,7 +82,7 @@ def main():
         return
     
     # Load configuration from file
-    config_path = f"configs/{args.config}.yaml"
+    config_path = f"LM/configs/{args.config}.yaml"
     print(f"📋 Loading configuration from: {config_path}")
     
     try:

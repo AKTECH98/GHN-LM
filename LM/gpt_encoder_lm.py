@@ -105,15 +105,3 @@ class GPTEncoderLayerLM(BaseLanguageModel):
         idx: (B, T0) start tokens
         """
         return super().generate(idx, max_new_tokens, temperature, top_k)
-
-
-# Quick sanity usage (remove or guard under __main__ in your repo)
-if __name__ == "__main__":
-    cfg = GPTConfig(vocab_size=32000, d_model=256, n_layer=4, n_head=4, d_ff=1024, max_seq_len=128)
-    model = GPTEncoderLayerLM(cfg)
-    x = torch.randint(0, cfg.vocab_size, (2, 32))
-    y = x.clone()
-    y[:, :-1] = x[:, 1:]
-    y[:, -1] = -100
-    logits, loss = model(x, targets=y)
-    print("params:", sum(p.numel() for p in model.parameters()), "loss:", float(loss))

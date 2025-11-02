@@ -10,55 +10,13 @@ Usage:
 
 import argparse
 import os
-import sys
-import time
 
 import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
 
-# Add the current directory to the path for imports
-sys.path.append(os.path.dirname(__file__))
-
-from LM import (
-    GPTEncoderLayerLM, GPTEncoderConfig,
-    GPTDecoderLM, MiniGPTConfig,
-    Trainer
-)
+from LM import Trainer
+from LM.create_model import create_model
 from Dataloader.wikitext2_loader import build_wikitext2
 from Dataloader.config_loader import load_config_file, list_benchmark_configs
-
-
-def create_model(model_config, vocab_size):
-    """Create a model based on the model config."""
-    if model_config.model_type == "gpt_encoder":
-        config = GPTEncoderConfig(
-            vocab_size=vocab_size,
-            d_model=model_config.d_model,
-            n_layer=model_config.n_layer,
-            n_head=model_config.n_head,
-            d_ff=model_config.d_ff,
-            max_seq_len=model_config.max_seq_len,
-            p_drop=model_config.p_drop
-        )
-        return GPTEncoderLayerLM(config)
-    
-    elif model_config.model_type == "mini_gpt":
-        config = MiniGPTConfig(
-            vocab_size=vocab_size,
-            d_model=model_config.d_model,
-            n_layer=model_config.n_layer,
-            n_head=model_config.n_head,
-            d_ff=model_config.d_ff,
-            max_seq_len=model_config.max_seq_len,
-            p_drop=model_config.p_drop
-        )
-        return GPTDecoderLM(config)
-    
-    else:
-        raise ValueError(f"Unknown model type: {model_config.model_type}")
 
 
 def main():

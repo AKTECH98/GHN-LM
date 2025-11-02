@@ -17,19 +17,15 @@ Usage:
 """
 
 import argparse
-import os
-import sys
-import json
 import glob
+import json
+import os
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
+
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
-import numpy as np
-
-# Add project root to path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from Dataloader.config_loader import load_config_file, list_benchmark_configs
 from Dataloader.wikitext2_loader import build_wikitext2

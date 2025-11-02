@@ -9,9 +9,8 @@ Usage:
 """
 
 import argparse
-import subprocess
-import sys
 import os
+import subprocess
 
 def list_available_configs():
     """List available benchmark configurations."""
@@ -70,8 +69,8 @@ def main():
     parser = argparse.ArgumentParser(description="Run GHN-initialized language model training")
     
     parser.add_argument("--config", type=str, help="Benchmark configuration name (e.g., benchmark_1_tiny)")
-    parser.add_argument("--ghn_checkpoint", type=str, default="Experiment/20917896/best_model.pt",
-                       help="Path to GHN checkpoint file")
+    parser.add_argument("--ghn_checkpoint", type=str, required=True,
+                       help="Path to GHN checkpoint file (e.g., Experiment/{job_id}/best_model.pt)")
     parser.add_argument("--save_ghn_init", action="store_true",
                        help="Save the GHN-initialized model before training")
     parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"],
@@ -90,7 +89,7 @@ def main():
         return
     
     if not args.config:
-        print("❌ Error: --config is required. Use --list_configs to see available configs.")
+        parser.error("--config is required. Use --list_configs to see available configs.")
         return
     
     # Run training
@@ -105,7 +104,7 @@ def main():
         print("\n🎉 GHN-initialized training completed successfully!")
     else:
         print("\n💥 GHN-initialized training failed!")
-        sys.exit(1)
+        exit(1)
 
 if __name__ == "__main__":
     main()
