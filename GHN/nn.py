@@ -508,6 +508,286 @@ class GHN3(GHN):
 
         return w
 
+    def _interpolate_params(self, w, target_shape):
+        """
+        Adapt predicted parameters to target shape using interpolation for upscaling
+        and pooling for downscaling. This provides smoother parameter initialization.
+        
+        Args:
+            w: Predicted parameter tensor
+            target_shape: Target shape tuple
+        
+        Returns:
+            Tensor with target_shape, interpolated or pooled from w
+        """
+        t, s = target_shape, w.shape
+
+        # Initial shape alignment - handle special cases first
+        if len(t) == 1:
+            if len(s) == 1:
+                # 1D to 1D: use pooling if downscaling, interpolation if upscaling
+                if t[0] < s[0]:
+                    # Downscale: use adaptive avg pooling (1D)
+                    w = w.unsqueeze(0).unsqueeze(0)  # [1, 1, N]
+                    w = F.adaptive_avg_pool1d(w, t[0])
+                    w = w.squeeze(0).squeeze(0)  # [N]
+                elif t[0] > s[0]:
+                    # Upscale: use interpolation
+                    w = w.unsqueeze(0).unsqueeze(0)  # [1, 1, N]
+                    w = F.interpolate(w, size=(t[0],), mode='linear', align_corners=False)
+                    w = w.squeeze(0).squeeze(0)  # [N]
+                # else: same size, no change needed
+            elif len(s) == 2:
+                # Extract from 2D: take first row and pool if needed
+                w = w[0, :]  # [in]
+                if t[0] < w.shape[0]:
+                    w = w.unsqueeze(0).unsqueeze(0)  # [1, 1, in]
+                    w = F.adaptive_avg_pool1d(w, t[0])
+                    w = w.squeeze(0).squeeze(0)  # [N]
+                elif t[0] > w.shape[0]:
+                    w = w.unsqueeze(0).unsqueeze(0)
+                    w = F.interpolate(w, size=(t[0],), mode='linear', align_corners=False)
+                    w = w.squeeze(0).squeeze(0)
+            elif len(s) > 2:
+                # Extract center and pool
+                w = w[0, 0, w.shape[-2] // 2, w.shape[-1] // 2]
+                if t[0] < w.numel():
+                    w = w.view(-1).unsqueeze(0).unsqueeze(0)
+                    w = F.adaptive_avg_pool1d(w, t[0])
+                    w = w.squeeze(0).squeeze(0)
+                elif t[0] > w.numel():
+                    w = w.view(-1).unsqueeze(0).unsqueeze(0)
+                    w = F.interpolate(w, size=(t[0],), mode='linear', align_corners=False)
+                    w = w.squeeze(0).squeeze(0)
+        elif len(t) == 2:
+            if len(s) == 2:
+                # 2D to 2D: use adaptive pooling if downscaling, interpolation if upscaling
+                if t[0] < s[0] or t[1] < s[1]:
+                    # Downscale: use adaptive avg pooling
+                    w = w.unsqueeze(0).unsqueeze(0)  # [1, 1, out, in]
+                    w = F.adaptive_avg_pool2d(w, (t[0], t[1]))
+                    w = w.squeeze(0).squeeze(0)  # [out, in]
+                elif t[0] > s[0] or t[1] > s[1]:
+                    # Upscale: use interpolation
+                    w = w.unsqueeze(0).unsqueeze(0)  # [1, 1, out, in]
+                    w = F.interpolate(w, size=(t[0], t[1]), mode='bilinear', align_corners=False)
+                    w = w.squeeze(0).squeeze(0)  # [out, in]
+            elif len(s) > 2:
+                # Extract center spatial location
+                w = w[:min(t[0], s[0]), :min(t[1], s[1]), s[2] // 2, s[3] // 2]
+                if t[0] < w.shape[0] or t[1] < w.shape[1]:
+                    w = w.unsqueeze(0).unsqueeze(0)
+                    w = F.adaptive_avg_pool2d(w, (t[0], t[1]))
+                    w = w.squeeze(0).squeeze(0)
+                elif t[0] > w.shape[0] or t[1] > w.shape[1]:
+                    w = w.unsqueeze(0).unsqueeze(0)
+                    w = F.interpolate(w, size=(t[0], t[1]), mode='bilinear', align_corners=False)
+                    w = w.squeeze(0).squeeze(0)
+        elif len(t) == 3:
+            if len(s) == 3:
+                # 3D to 3D
+                if t[0] < s[0] or t[1] < s[1] or t[2] < s[2]:
+                    # Downscale: use adaptive avg pooling (3D)
+                    w = w.unsqueeze(0)  # [1, dim1, dim2, dim3]
+                    w = F.adaptive_avg_pool3d(w, (t[0], t[1], t[2]))
+                    w = w.squeeze(0)
+                elif t[0] > s[0] or t[1] > s[1] or t[2] > s[2]:
+                    # Upscale: use interpolation
+                    w = w.unsqueeze(0)
+                    w = F.interpolate(w, size=(t[0], t[1], t[2]), mode='trilinear', align_corners=False)
+                    w = w.squeeze(0)
+            elif len(s) > 3:
+                # handle the positional encoding in vision transformers
+                w = w.reshape(*s[:2], -1).permute(0, 2, 1)  # e.g. [1, 49, 384]
+                w = w[:min(t[0], w.shape[0]), :min(t[1], w.shape[1]), :min(t[2], w.shape[2])]
+                # add class token embedding initialized randomly since GHNs were trained on models without class token
+                w = torch.cat((torch.normal(mean=0, std=0.02, size=(1, 1, w.shape[2]), device=w.device), w), dim=1)
+        else:
+            # 4D: Handle conv layers
+            s2 = min(t[2], s[2]) if len(s) > 2 else 1
+            s3 = min(t[3], s[3]) if len(s) > 3 else 1
+            if len(s) > 2:
+                if self._is_ghn2:
+                    w = w[:min(t[0], s[0]), :min(t[1], s[1]), :s2, :s3]
+                else:
+                    offset = (w.shape[-2] // 2, w.shape[-1] // 2)
+                    w = w[:min(t[0], s[0]), :min(t[1], s[1]),
+                          offset[0] - s2 // 2: offset[0] + int(np.ceil(s2 / 2)),
+                          offset[1] - s3 // 2: offset[1] + int(np.ceil(s3 / 2))]
+            else:
+                w = w[:min(t[0], s[0]), :min(t[1], s[1])].unsqueeze(2).unsqueeze(3)
+
+        s = w.shape
+        # Only assert if we haven't already resized
+        if len(s) == len(t):
+            # Check if dimensions match or need further processing
+            needs_resize = any(s[i] != t[i] for i in range(len(t)))
+            if not needs_resize:
+                return w  # Already correct size
+
+        # Handle out_channels: pool if downscaling, interpolate if upscaling
+        if t[0] < s[0]:
+            # Downscale out_channels using adaptive pooling
+            if len(t) == 1:
+                w = w.unsqueeze(0).unsqueeze(0)
+                w = F.adaptive_avg_pool1d(w, t[0])
+                w = w.squeeze(0).squeeze(0)
+            elif len(t) == 2:
+                w = w.unsqueeze(0).unsqueeze(0)  # [1, 1, out, in]
+                w = F.adaptive_avg_pool2d(w, (t[0], s[1]))  # Pool out_channels dimension
+                w = w.squeeze(0).squeeze(0)
+            elif len(t) == 3:
+                w = w.unsqueeze(0)
+                w = F.adaptive_avg_pool3d(w, (t[0], s[1], s[2]))
+                w = w.squeeze(0)
+            else:
+                # 4D: Pool out_channels dimension
+                orig_shape = w.shape  # [out, in, H, W]
+                w = w.permute(1, 2, 3, 0).unsqueeze(0)  # [1, in, H, W, out]
+                w = w.view(1, -1, orig_shape[0])  # [1, in*H*W, out]
+                w = F.adaptive_avg_pool1d(w, t[0])  # Pool to target out_channels
+                w = w.view(1, orig_shape[1], orig_shape[2], orig_shape[3], t[0])
+                w = w.squeeze(0).permute(3, 0, 1, 2)  # [out, in, H, W]
+        elif t[0] > s[0]:
+            # Upscale out_channels using interpolation
+            if len(t) == 1:
+                # 1D: Linear interpolation
+                w = w.unsqueeze(0).unsqueeze(0)  # [1, 1, N]
+                w = F.interpolate(w, size=(t[0],), mode='linear', align_corners=False)
+                w = w.squeeze(0).squeeze(0)  # [N]
+            elif len(t) == 2:
+                # 2D: Bilinear interpolation for Linear layers (most common for LMs)
+                # Reshape to 4D for F.interpolate: [1, 1, out, in]
+                w = w.unsqueeze(0).unsqueeze(0)  # [1, 1, out, in]
+                w = F.interpolate(w, size=(t[0], t[1]), mode='bilinear', align_corners=False)
+                w = w.squeeze(0).squeeze(0)  # [out, in]
+            elif len(t) == 3:
+                # 3D: Trilinear interpolation
+                w = w.unsqueeze(0)  # [1, dim1, dim2, dim3]
+                w = F.interpolate(w, size=(t[0], t[1], t[2]), mode='trilinear', align_corners=False)
+                w = w.squeeze(0)
+            else:
+                # 4D: For conv layers, interpolate spatial dimensions first
+                if t[2] > s[2] or t[3] > s[3]:
+                    # Interpolate spatial dimensions (H, W)
+                    orig_shape = w.shape  # [out, in, H, W]
+                    w = w.view(-1, 1, s[2], s[3])  # [out*in, 1, H, W]
+                    w = F.interpolate(w, size=(t[2], t[3]), mode='bilinear', align_corners=False)
+                    w = w.view(orig_shape[0], orig_shape[1], t[2], t[3])  # [out, in, H, W]
+                # For out_channels, use interpolation across batch dimension
+                if t[0] > w.shape[0]:
+                    # Treat each out_channel as a separate sample, interpolate
+                    w = w.permute(1, 2, 3, 0).unsqueeze(0)  # [1, in, H, W, out]
+                    w = w.view(1, -1, w.shape[-1])  # [1, in*H*W, out]
+                    w = F.interpolate(w, size=(t[0],), mode='linear', align_corners=False)
+                    w = w.view(1, orig_shape[1], t[2], t[3], t[0])
+                    w = w.squeeze(0).permute(3, 0, 1, 2)  # [out, in, H, W]
+
+        # Update shape after out_channels handling
+        s = w.shape
+        if len(t) > 1:
+            if t[1] < s[1]:
+                # Downscale in_channels using adaptive pooling
+                if len(t) == 2:
+                    # 2D: Transpose, pool, transpose back
+                    w = w.T.unsqueeze(0).unsqueeze(0)  # [1, 1, in, out]
+                    w = F.adaptive_avg_pool2d(w, (t[1], t[0]))  # Pool in_channels dimension
+                    w = w.squeeze(0).squeeze(0).T  # [out, in]
+                elif len(t) == 3:
+                    w = w.unsqueeze(0)
+                    w = F.adaptive_avg_pool3d(w, (t[0], t[1], t[2]))
+                    w = w.squeeze(0)
+                else:
+                    # 4D: Pool in_channels dimension
+                    orig_shape = w.shape  # [out, in, H, W]
+                    w = w.permute(0, 2, 3, 1).contiguous()  # [out, H, W, in]
+                    w = w.view(-1, orig_shape[1], 1, 1)  # [out*H*W, in, 1, 1]
+                    w = F.adaptive_avg_pool2d(w, (t[1], 1))  # Pool in_channels
+                    w = w.view(orig_shape[0], orig_shape[2], orig_shape[3], t[1])  # [out, H, W, in]
+                    w = w.permute(0, 3, 1, 2)  # [out, in, H, W]
+            elif t[1] > s[1]:
+                # Upscale in_channels using interpolation
+                if len(t) == 2:
+                    # 2D: Transpose, interpolate, transpose back
+                    w = w.T.unsqueeze(0).unsqueeze(0)  # [1, 1, in, out]
+                    w = F.interpolate(w, size=(t[1], t[0]), mode='bilinear', align_corners=False)
+                    w = w.squeeze(0).squeeze(0).T  # [out, in]
+                elif len(t) == 3:
+                    # 3D: Interpolate along third dimension
+                    w = w.unsqueeze(0)  # [1, dim1, dim2, dim3]
+                    w = F.interpolate(w, size=(t[0], t[1], t[2]), mode='trilinear', align_corners=False)
+                    w = w.squeeze(0)
+                else:
+                    # 4D: Interpolate in_channels dimension
+                    orig_shape = w.shape  # [out, in, H, W]
+                    w = w.permute(0, 2, 3, 1).contiguous()  # [out, H, W, in]
+                    w = w.view(-1, orig_shape[1], 1, 1)  # [out*H*W, in, 1, 1]
+                    w = F.interpolate(w, size=(t[1], 1), mode='bilinear', align_corners=False)
+                    w = w.view(orig_shape[0], orig_shape[2], orig_shape[3], t[1])  # [out, H, W, in]
+                    w = w.permute(0, 3, 1, 2)  # [out, in, H, W]
+            elif len(t) == 3 and len(s) == 3:
+                if t[2] < s[2]:
+                    # Downscale third dimension
+                    w = w.unsqueeze(0)
+                    w = F.adaptive_avg_pool3d(w, (t[0], t[1], t[2]))
+                    w = w.squeeze(0)
+                elif t[2] > s[2]:
+                    # Upscale third dimension
+                    w = w.unsqueeze(0)
+                    w = F.interpolate(w, size=(t[0], t[1], t[2]), mode='trilinear', align_corners=False)
+                    w = w.squeeze(0)
+
+        # For 4D tensors, handle spatial dimensions if needed
+        if len(t) == 4 and len(s) == 4:
+            if t[2] < s[2] or t[3] < s[3]:
+                # Downscale spatial dimensions
+                orig_shape = w.shape  # [out, in, H, W]
+                w = w.view(-1, 1, s[2], s[3])  # [out*in, 1, H, W]
+                w = F.adaptive_avg_pool2d(w, (t[2], t[3]))
+                w = w.view(orig_shape[0], orig_shape[1], t[2], t[3])
+            elif t[2] > s[2] or t[3] > s[3]:
+                # Upscale spatial dimensions
+                orig_shape = w.shape
+                w = w.view(-1, 1, s[2], s[3])
+                w = F.interpolate(w, size=(t[2], t[3]), mode='bilinear', align_corners=False)
+                w = w.view(orig_shape[0], orig_shape[1], t[2], t[3])
+
+        # Final check: ensure exact target dimensions (small adjustments if needed)
+        if w.shape != t:
+            # If still not matching, use adaptive pooling as final step
+            if len(t) == 1:
+                w = w.view(-1)[:t[0]]
+            elif len(t) == 2:
+                w = w.unsqueeze(0).unsqueeze(0)
+                w = F.adaptive_avg_pool2d(w, (t[0], t[1]))
+                w = w.squeeze(0).squeeze(0)
+            elif len(t) == 3:
+                w = w.unsqueeze(0)
+                w = F.adaptive_avg_pool3d(w, (t[0], t[1], t[2]))
+                w = w.squeeze(0)
+            else:
+                # 4D: Use adaptive pooling on spatial dims, then handle channels
+                orig_shape = w.shape  # [out, in, H, W]
+                w = w.view(-1, 1, orig_shape[2], orig_shape[3])  # [out*in, 1, H, W]
+                w = F.adaptive_avg_pool2d(w, (t[2], t[3]))  # Pool spatial dims
+                w = w.view(orig_shape[0], orig_shape[1], t[2], t[3])
+                # Handle channel dimensions separately if needed
+                if w.shape[0] != t[0] or w.shape[1] != t[1]:
+                    # Reshape for channel pooling
+                    w = w.permute(2, 3, 0, 1).contiguous()  # [H, W, out, in]
+                    w = w.view(-1, orig_shape[0], orig_shape[1])  # [H*W, out, in]
+                    if w.shape[1] != t[0]:
+                        w = w.permute(2, 0, 1).contiguous()  # [in, H*W, out]
+                        w = F.adaptive_avg_pool1d(w, t[0])  # Pool out_channels
+                        w = w.permute(2, 0, 1)  # [out, in, H*W]
+                    if w.shape[1] != t[1]:
+                        w = w.permute(0, 2, 1).contiguous()  # [out, H*W, in]
+                        w = F.adaptive_avg_pool1d(w, t[1])  # Pool in_channels
+                        w = w.permute(0, 2, 1)  # [out, in, H*W]
+                    w = w.view(t[0], t[1], t[2], t[3])  # [out, in, H, W]
+
+        return w
+
     def _set_params(self, module, tensor, is_w, keep_grads=None):
         r"""
         Copies the predicted parameter tensor to the appropriate field of the module object.
