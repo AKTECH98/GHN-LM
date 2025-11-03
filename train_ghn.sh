@@ -70,6 +70,7 @@ python train_ghn.py \
     --opt adam \
     --amp \
     --include_embeddings \
+    --exclude_large_oss \
     --log_interval 2 \
     --hid 32 \
     --hypernet gatedgnn \
