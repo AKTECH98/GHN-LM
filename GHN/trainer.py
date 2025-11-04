@@ -135,7 +135,10 @@ class Trainer:
         if self.ddp:
             # Use find_unused_parameters=True for GHN because different models may use different decoder parts
             # This prevents "unused parameters" errors in DDP when some parameters don't receive gradients
-            model = DDP(model, device_ids=[self.rank], output_device=self.rank, find_unused_parameters=True)
+            # Use static_graph=True because the GHN decoder structure is static across iterations,
+            # even though the same decoder parameters are reused for multiple models in the same batch
+            model = DDP(model, device_ids=[self.rank], output_device=self.rank, 
+                       find_unused_parameters=True, static_graph=True)
 
         if compile_mode not in [None, 'none', False]:
             try:
