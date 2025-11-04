@@ -41,6 +41,8 @@ def parse_arguments():
                        help='Maximum layers for OSS models (filters deep models). Suggested: 24 for <30GB, 12 for <10GB memory')
     parser.add_argument('--exclude_large_oss', action='store_true',
                        help='Exclude all OSS models with >1B parameters (GPT-J-6B, Mistral-7B, MPT-7B, GPT-Neo-2.7B, GPT-2-XL). Recommended for <30GB GPU')
+    parser.add_argument('--exclude_oss', action='store_true',
+                       help='Exclude ALL OSS models from training (only train on GPT Encoder and Mini GPT variants)')
     
     # PPUDA-specific arguments (common training args handled by init_config)
     
@@ -124,11 +126,14 @@ def main():
         exclude_embeddings=not args.include_embeddings,  # Convert include_embeddings to exclude_embeddings
         max_oss_d_model=args.max_oss_d_model,
         max_oss_layers=args.max_oss_layers,
-        exclude_large_oss=args.exclude_large_oss
+        exclude_large_oss=args.exclude_large_oss,
+        exclude_oss=args.exclude_oss
     )
     
     # Log filtering info
-    if args.exclude_large_oss or args.max_oss_d_model or args.max_oss_layers:
+    if args.exclude_oss:
+        log('OSS models excluded: Only training on GPT Encoder and Mini GPT variants')
+    elif args.exclude_large_oss or args.max_oss_d_model or args.max_oss_layers:
         log('OSS model filtering enabled:')
         if args.exclude_large_oss:
             log('  - Excluding large OSS models (>1B parameters)')

@@ -323,7 +323,7 @@ class GHN3(GHN):
                     else:
                         w_ = w[w_ind]
 
-                    sz_set = self._set_params(m, self._tile_params(w_, sz), is_w=is_w & ~it, keep_grads=keep_grads)
+                    sz_set = self._set_params(m, self._interpolate_params(w_, sz), is_w=is_w & ~it, keep_grads=keep_grads)
                     if debug_info is not None:
                         debug_info['n_tensors_pred'] += 1
                         debug_info['n_params_pred'] += torch.prod(torch.tensor(sz_set))
