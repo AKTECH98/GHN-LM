@@ -5,19 +5,19 @@
 #SBATCH --comment="GHN-3 Language Model Training with Multiple GPUs (DDP)"
 #SBATCH --mail-user=slack:@ak3748       # Slack username to notify
 #SBATCH --mail-type=BEGIN,END
-#SBATCH --gres=gpu:a100:4               # Request 4 GPUs (adjust as needed)
+#SBATCH --gres=gpu:a100:2               # Request 2 GPUs (adjust as needed)
 #SBATCH --time=0-01:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16              # More CPUs for multiple GPUs (4 per GPU)
-#SBATCH --mem=128g                      # More memory for multiple GPUs (32GB per GPU)
+#SBATCH --cpus-per-task=8              # More CPUs for multiple GPUs (4 per GPU)
+#SBATCH --mem=80g                      # More memory for multiple GPUs (40GB per GPU)
 
 # =============================================================================
 # Configuration - Adjust these values as needed
 # =============================================================================
 
 # Number of GPUs to use (should match --gres=gpu:a100:N above)
-NUM_GPUS=${SLURM_GPUS:-4}  # Default to 4, or use SLURM_GPUS if set
+NUM_GPUS=${SLURM_GPUS:-2}  # Default to 4, or use SLURM_GPUS if set
 
 # Training configuration
 MODEL_NAME="GHN-3-MultiGPU"
@@ -39,7 +39,7 @@ MAX_SHAPE="1024,1024,1,1"
 
 # Model filtering (for memory efficiency)
 EXCLUDE_OSS=true         # Exclude OSS models
-INCLUDE_EMBEDDINGS=false # Set to true to include embeddings (uses more memory)
+INCLUDE_EMBEDDINGS=true # Set to true to include embeddings (uses more memory)
 
 # =============================================================================
 # Job Setup

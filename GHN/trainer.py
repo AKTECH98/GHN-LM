@@ -133,7 +133,9 @@ class Trainer:
 
         self._is_ghn = isinstance(model, GHN) or (hasattr(model, 'module') and isinstance(model.module, GHN))
         if self.ddp:
-            model = DDP(model, device_ids=[self.rank], output_device=self.rank)
+            # Use find_unused_parameters=True for GHN because different models may use different decoder parts
+            # This prevents "unused parameters" errors in DDP when some parameters don't receive gradients
+            model = DDP(model, device_ids=[self.rank], output_device=self.rank, find_unused_parameters=True)
 
         if compile_mode not in [None, 'none', False]:
             try:
