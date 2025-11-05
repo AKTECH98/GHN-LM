@@ -39,7 +39,9 @@ MAX_SHAPE="512,512,1,1"  # Reduced from 1024,1024,1,1 to save memory
 
 # Model filtering (for memory efficiency)
 EXCLUDE_OSS=true         # Exclude OSS models
-INCLUDE_EMBEDDINGS=true # Set to true to include embeddings (uses more memory)
+INCLUDE_EMBEDDINGS=true  # Set to true to include embeddings (uses more memory)
+MAX_D_MODEL=512          # Maximum d_model for GPT Encoder/Mini GPT variants (reduces memory usage)
+MAX_LAYERS=8             # Maximum layers for GPT Encoder/Mini GPT variants (reduces memory usage)
 
 # =============================================================================
 # Job Setup
@@ -111,6 +113,12 @@ echo "  - Total effective batch: $TOTAL_EFFECTIVE_BATCH"
 echo "  - Max shape: $MAX_SHAPE"
 echo "  - Exclude OSS models: $EXCLUDE_OSS"
 echo "  - Include embeddings: $INCLUDE_EMBEDDINGS"
+if [ -n "$MAX_D_MODEL" ]; then
+    echo "  - Max d_model: $MAX_D_MODEL"
+fi
+if [ -n "$MAX_LAYERS" ]; then
+    echo "  - Max layers: $MAX_LAYERS"
+fi
 echo ""
 
 # Validate configuration
@@ -147,6 +155,15 @@ fi
 
 if [ "$INCLUDE_EMBEDDINGS" = true ]; then
     TRAIN_ARGS+=(--include_embeddings)
+fi
+
+# Add GPT Encoder/Mini GPT filtering arguments
+if [ -n "$MAX_D_MODEL" ]; then
+    TRAIN_ARGS+=(--max_d_model "$MAX_D_MODEL")
+fi
+
+if [ -n "$MAX_LAYERS" ]; then
+    TRAIN_ARGS+=(--max_layers "$MAX_LAYERS")
 fi
 
 # Run GHN-3 training with torchrun for multi-GPU DDP

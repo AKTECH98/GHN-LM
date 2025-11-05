@@ -44,6 +44,12 @@ def parse_arguments():
     parser.add_argument('--exclude_oss', action='store_true',
                        help='Exclude ALL OSS models from training (only train on GPT Encoder and Mini GPT variants)')
     
+    # GPT Encoder/Mini GPT filtering arguments (for memory efficiency)
+    parser.add_argument('--max_d_model', type=int, default=None,
+                       help='Maximum d_model for GPT Encoder/Mini GPT variants (filters large models). Suggested: 512 for <40GB memory, 768 for <80GB')
+    parser.add_argument('--max_layers', type=int, default=None,
+                       help='Maximum layers for GPT Encoder/Mini GPT variants (filters deep models). Suggested: 8 for <40GB memory, 12 for <80GB')
+    
     # PPUDA-specific arguments (common training args handled by init_config)
     
     # Model architecture arguments
@@ -127,7 +133,9 @@ def main():
         max_oss_d_model=args.max_oss_d_model,
         max_oss_layers=args.max_oss_layers,
         exclude_large_oss=args.exclude_large_oss,
-        exclude_oss=args.exclude_oss
+        exclude_oss=args.exclude_oss,
+        max_d_model=args.max_d_model,
+        max_layers=args.max_layers
     )
     
     # Log filtering info
@@ -141,6 +149,15 @@ def main():
             log(f'  - Max d_model for OSS: {args.max_oss_d_model}')
         if args.max_oss_layers:
             log(f'  - Max layers for OSS: {args.max_oss_layers}')
+    
+    # Log GPT Encoder/Mini GPT filtering info
+    if args.max_d_model or args.max_layers:
+        log('GPT Encoder/Mini GPT filtering enabled:')
+        if args.max_d_model:
+            log(f'  - Max d_model: {args.max_d_model}')
+        if args.max_layers:
+            log(f'  - Max layers: {args.max_layers}')
+    
     log(f'Total architecture variants: {len(arch_configs):,}')
     
     

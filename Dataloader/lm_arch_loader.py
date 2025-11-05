@@ -172,7 +172,9 @@ def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024,
                           max_oss_d_model: Optional[int] = None,
                           max_oss_layers: Optional[int] = None,
                           exclude_large_oss: bool = False,
-                          exclude_oss: bool = False) -> List[Dict]:
+                          exclude_oss: bool = False,
+                          max_d_model: Optional[int] = None,
+                          max_layers: Optional[int] = None) -> List[Dict]:
     """
     Generate comprehensive language model configurations for GHN training.
     
@@ -195,6 +197,10 @@ def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024,
                           Convenient shortcut to exclude GPT-J-6B, Mistral-7B, MPT-7B, GPT-Neo-2.7B
         exclude_oss: If True, excludes ALL OSS models from training
                     (only generates GPT Encoder and Mini GPT variants)
+        max_d_model: Maximum d_model for GPT Encoder/Mini GPT variants (filters out larger models).
+                    Default None = no limit. Suggested: 512 for <40GB memory, 768 for <80GB
+        max_layers: Maximum layers for GPT Encoder/Mini GPT variants (filters out deeper models).
+                   Default None = no limit. Suggested: 8 for <40GB memory, 12 for <80GB
         
     Returns:
         List of model configuration dictionaries
@@ -206,6 +212,12 @@ def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024,
                 576, 640, 704, 768, 832, 896, 960, 1024, 1152, 1280, 1408, 1536, 1664, 1792, 1920, 2048]
     layer_counts = list(range(1, 17))  # 1-16 layers
     mlp_ratios = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8]
+    
+    # Filter parameter ranges based on max_d_model and max_layers
+    if max_d_model is not None:
+        d_models = [d for d in d_models if d <= max_d_model]
+    if max_layers is not None:
+        layer_counts = [l for l in layer_counts if l <= max_layers]
     
     # Generate Transformer variants
     variants.extend(_generate_transformer_variants(d_models, layer_counts, mlp_ratios, max_len, vocab_size))
@@ -326,7 +338,9 @@ class GHNLMVariantsDataset(Dataset):
                  max_oss_d_model: Optional[int] = None,
                  max_oss_layers: Optional[int] = None,
                  exclude_large_oss: bool = False,
-                 exclude_oss: bool = False):
+                 exclude_oss: bool = False,
+                 max_d_model: Optional[int] = None,
+                 max_layers: Optional[int] = None):
         """
         Initialize the dataset.
         
@@ -340,6 +354,8 @@ class GHNLMVariantsDataset(Dataset):
             max_oss_layers: Maximum layers for OSS models (filters deep models)
             exclude_large_oss: If True, excludes all OSS models with >1B parameters
             exclude_oss: If True, excludes ALL OSS models from training
+            max_d_model: Maximum d_model for GPT Encoder/Mini GPT variants (filters large models)
+            max_layers: Maximum layers for GPT Encoder/Mini GPT variants (filters deep models)
         """
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.ve_cutoff = ve_cutoff
@@ -349,7 +365,9 @@ class GHNLMVariantsDataset(Dataset):
                                             max_oss_d_model=max_oss_d_model,
                                             max_oss_layers=max_oss_layers,
                                             exclude_large_oss=exclude_large_oss,
-                                            exclude_oss=exclude_oss)
+                                            exclude_oss=exclude_oss,
+                                            max_d_model=max_d_model,
+                                            max_layers=max_layers)
 
     def __len__(self) -> int:
         """Return the number of model configurations."""
@@ -396,6 +414,8 @@ def build_ghn_variants_dataloader(
     max_oss_layers: Optional[int] = None,
     exclude_large_oss: bool = False,
     exclude_oss: bool = False,
+    max_d_model: Optional[int] = None,
+    max_layers: Optional[int] = None,
 ):
     """
     Build a DataLoader for GHN training with comprehensive LM variants.
@@ -418,6 +438,10 @@ def build_ghn_variants_dataloader(
                           (GPT-J-6B, Mistral-7B, MPT-7B, GPT-Neo-2.7B, GPT-2-XL)
         exclude_oss: If True, excludes ALL OSS models from training
                     (only trains on GPT Encoder and Mini GPT variants)
+        max_d_model: Maximum d_model for GPT Encoder/Mini GPT variants (None = no limit)
+                    Suggested: 512 for <40GB memory, 768 for <80GB
+        max_layers: Maximum layers for GPT Encoder/Mini GPT variants (None = no limit)
+                   Suggested: 8 for <40GB memory, 12 for <80GB
         
     Returns:
         Tuple of (DataLoader, configs) where DataLoader yields (models, graph_batch, metas)
@@ -432,7 +456,9 @@ def build_ghn_variants_dataloader(
         max_oss_d_model=max_oss_d_model,
         max_oss_layers=max_oss_layers,
         exclude_large_oss=exclude_large_oss,
-        exclude_oss=exclude_oss
+        exclude_oss=exclude_oss,
+        max_d_model=max_d_model,
+        max_layers=max_layers
     )
 
     def collate_fn(items):
