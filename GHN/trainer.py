@@ -521,6 +521,8 @@ class Trainer:
                         
                         loss += model_loss
                         logits.append(logits_model.detach())
+                        # Clear intermediate tensors to save memory
+                        del logits_model
                     except Exception as e:
                         print(f"Error in model forward pass: {e}")
                         print(f"Model: {model}")
@@ -534,6 +536,9 @@ class Trainer:
                     print(f"Warning: All models produced NaN loss at step {self._step}")
                     print(f"  Skipping this batch")
                     return None
+                
+                # Note: Don't delete predicted_models here - they're needed for backward pass
+                # They will be cleaned up by Python's GC after backward pass
 
             if loss_predwd is not None:
                 loss += loss_predwd
@@ -553,6 +558,14 @@ class Trainer:
             if isinstance(loss_avg, str):  # nan loss in any worker -> exit
                 return loss_avg
 
+            # Stack logits before backward to save memory (keep list structure for metrics)
+            if len(logits) > 0 and isinstance(logits[0], torch.Tensor):
+                logits_stack = torch.stack(logits)
+                del logits
+                logits = [logits_stack]  # Keep for metrics calculation
+            else:
+                logits = []
+
             if self.amp:
                 # Scales the loss, and calls backward()
                 # to create scaled gradients
@@ -562,6 +575,10 @@ class Trainer:
                 self.scaler.unscale_(self._optimizer)
             else:
                 loss.backward()
+            
+            # Clear memory after backward pass
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
             if self._step == 0 and self.rank == 0 and self.verbose:
                 print_grads(self._model)
@@ -596,7 +613,11 @@ class Trainer:
             # Update training metrics (for language models, we use perplexity instead of accuracy)
             if len(logits) > 0:
                 # Calculate perplexity as a metric with overflow protection
-                avg_logits = torch.stack(logits).mean(0)  # Average logits across models
+                # logits is already a list with one stacked tensor from memory optimization above
+                if isinstance(logits[0], torch.Tensor) and logits[0].dim() > 2:
+                    avg_logits = logits[0].mean(0)  # Average logits across models
+                else:
+                    avg_logits = torch.stack(logits).mean(0)  # Fallback if structure is different
                 cross_entropy_loss = F.cross_entropy(avg_logits.view(-1, avg_logits.size(-1)), 
                                                     labels.view(-1), 
                                                     ignore_index=-100)
@@ -612,10 +633,20 @@ class Trainer:
                 self.metrics['top1'].update((avg_ddp_metric(perplexity) if self.ddp else perplexity).item(), n)
                 # Keep top5 for compatibility (set to same as top1)
                 self.metrics['top5'].update((avg_ddp_metric(perplexity) if self.ddp else perplexity).item(), n)
+                
+                # Clear logits after metrics calculation
+                del avg_logits, cross_entropy_loss, clamped_loss, perplexity
 
             self._step += 1
 
         except RuntimeError as err:
+            # Check if it's an OOM error
+            if 'out of memory' in str(err).lower() or 'cuda' in str(err).lower():
+                print(f'OOM error on rank {self.rank}, step {self._step}')
+                # Clear cache to potentially recover
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            
             print('error', 'rank ', self.rank, type(err), err, getattr(graphs, 'net_args', '') if graphs is not None else '')
             loss = nan_loss
 

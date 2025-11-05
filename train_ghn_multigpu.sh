@@ -27,7 +27,7 @@ SEQ_LEN=64
 INTERM_EPOCH=1
 EPOCHS=75
 BATCH_SIZE=2              # WikiText-2 batch size per GPU
-META_BATCH_SIZE=8        # Total models across all GPUs (will be split evenly)
+META_BATCH_SIZE=4        # Total models across all GPUs (will be split evenly)
 LR=0.0004
 WD=0.01
 OPTIMIZER="adam"
@@ -35,7 +35,7 @@ LOG_INTERVAL=2
 HID=32
 HYPERNET="gatedgnn"
 DECODER="conv"
-MAX_SHAPE="1024,1024,1,1"
+MAX_SHAPE="512,512,1,1"  # Reduced from 1024,1024,1,1 to save memory
 
 # Model filtering (for memory efficiency)
 EXCLUDE_OSS=true         # Exclude OSS models
