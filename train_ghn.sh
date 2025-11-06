@@ -71,6 +71,8 @@ python train_ghn.py \
     --amp \
     --include_embeddings \
     --exclude_oss \
+    --max_d_model 1024 \
+    --max_layers 16 \
     --log_interval 2 \
     --hid 32 \
     --hypernet gatedgnn \

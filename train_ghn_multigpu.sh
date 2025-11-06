@@ -37,11 +37,11 @@ HYPERNET="gatedgnn"
 DECODER="conv"
 MAX_SHAPE="512,512,1,1"  # Reduced from 1024,1024,1,1 to save memory
 
-# Model filtering (for memory efficiency)
+# Model filtering (for ~100K models)
 EXCLUDE_OSS=true         # Exclude OSS models
 INCLUDE_EMBEDDINGS=true  # Set to true to include embeddings (uses more memory)
-MAX_D_MODEL=512          # Maximum d_model for GPT Encoder/Mini GPT variants (reduces memory usage)
-MAX_LAYERS=8             # Maximum layers for GPT Encoder/Mini GPT variants (reduces memory usage)
+MAX_D_MODEL=1024         # Maximum d_model for GPT Encoder/Mini GPT variants (~100K models)
+MAX_LAYERS=16            # Maximum layers for GPT Encoder/Mini GPT variants (~100K models)
 
 # =============================================================================
 # Job Setup
