@@ -330,6 +330,11 @@ class GHNLMVariantsDataset(Dataset):
     - model: Instantiated language model
     - graph: Graph representation for GHN-3
     - meta: Metadata including configuration and model type
+    
+    IMPORTANT: This dataset uses LAZY LOADING - models are created on-demand
+    in __getitem__() when requested, not pre-loaded in __init__(). This ensures
+    memory efficiency when dealing with large datasets (e.g., 100K+ models).
+    Only model configurations (dictionaries) are stored in memory.
     """
 
     def __init__(self, vocab_size: int = 50257, max_len: int = 1024, 
@@ -375,7 +380,10 @@ class GHNLMVariantsDataset(Dataset):
 
     def __getitem__(self, idx: int):
         """
-        Get a model configuration by index.
+        Get a model configuration by index (LAZY LOADING).
+        
+        Models are created on-demand when this method is called, not pre-loaded.
+        This ensures memory efficiency when dealing with large datasets.
         
         Args:
             idx: Index of the configuration
@@ -387,7 +395,7 @@ class GHNLMVariantsDataset(Dataset):
         name = cfg.pop("name")
         model_type = cfg.pop("model_type", "tiny_transformer")
         
-        # Create model using the factory function
+        # LAZY LOADING: Create model on-demand (not pre-loaded in __init__)
         model = create_model_from_config(model_type, cfg, self.device)
         graph = Graph(model, ve_cutoff=self.ve_cutoff, dense=self.dense, verbose=False, 
                      exclude_embeddings=self.exclude_embeddings)
@@ -474,5 +482,6 @@ def build_ghn_variants_dataloader(
         num_workers=num_workers,
         collate_fn=collate_fn,
         pin_memory=torch.cuda.is_available(),
+        persistent_workers=False,  # Don't keep workers alive between epochs (saves memory)
     )
     return loader, dataset.configs

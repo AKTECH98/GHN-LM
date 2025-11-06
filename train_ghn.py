@@ -291,6 +291,12 @@ def main():
 
             # Update trainer with language model data
             trainer.update_lm(input_ids, labels, graphs=graph_batch, models=models)
+            
+            # Explicit cleanup: Models are created lazily and should be freed after use
+            # Python's garbage collector will handle this, but explicit cleanup helps with memory
+            del models, graph_batch
+            if step % 10 == 0:  # Periodic cleanup to avoid fragmentation
+                torch.cuda.empty_cache() if torch.cuda.is_available() else None
              
             # Log to console
             trainer.log(step)
