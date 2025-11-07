@@ -53,23 +53,29 @@ def create_ops(light):
                 
                 # Move all buffers to the new device
                 if device is not None:
-                    # Move buffers in _buffers dict
+                    # Move buffers in _buffers dict (non-persistent buffers)
                     if hasattr(self, '_buffers'):
-                        for name, buf in self._buffers.items():
+                        for name, buf in list(self._buffers.items()):
                             if isinstance(buf, torch.Tensor):
-                                self._buffers[name] = buf.to(device)
-                                # Also update the attribute if it exists
+                                moved_buf = buf.to(device)
+                                self._buffers[name] = moved_buf
+                                # Also update the attribute if it exists (for non-persistent buffers)
                                 if hasattr(self, name):
-                                    object.__setattr__(self, name, self._buffers[name])
+                                    object.__setattr__(self, name, moved_buf)
                     
-                    # Move buffers stored as attributes (persistent buffers)
-                    # Check all attributes for tensors that might be buffers
-                    for attr_name in dir(self):
-                        if not attr_name.startswith('_') and hasattr(self, attr_name):
-                            attr = getattr(self, attr_name)
-                            if isinstance(attr, torch.Tensor) and not isinstance(attr, torch.nn.Parameter):
-                                # This is likely a buffer, move it to device
-                                setattr(self, attr_name, attr.to(device))
+                    # Move buffers stored as attributes (persistent buffers and direct attributes)
+                    # Use __dict__ to get actual attributes, not properties
+                    if hasattr(self, '__dict__'):
+                        for attr_name, attr_value in list(self.__dict__.items()):
+                            # Skip private attributes (except those we want to check) and special attributes
+                            if attr_name.startswith('_') and attr_name not in ['_buffers', '_parameters', '_modules', '_device']:
+                                continue
+                            if attr_name in ['_buffers', '_parameters', '_modules', '_device']:
+                                continue
+                            if isinstance(attr_value, torch.Tensor) and not isinstance(attr_value, torch.nn.Parameter):
+                                # This is likely a buffer stored as an attribute, move it to device
+                                moved_attr = attr_value.to(device)
+                                object.__setattr__(self, attr_name, moved_attr)
                 
                 # Recursively move submodules
                 if hasattr(self, '_modules'):
