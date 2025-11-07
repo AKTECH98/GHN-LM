@@ -42,6 +42,7 @@ def create_ops(light):
 
             def to(self, *args, **kwargs):
                 # Store device info for lightweight ops (they don't track device in parameters)
+                device = None
                 if len(args) > 0:
                     device = args[0]
                     if isinstance(device, (str, torch.device)):
@@ -49,6 +50,33 @@ def create_ops(light):
                 elif 'device' in kwargs:
                     device = kwargs['device']
                     self._device = torch.device(device) if isinstance(device, str) else device
+                
+                # Move all buffers to the new device
+                if device is not None:
+                    # Move buffers in _buffers dict
+                    if hasattr(self, '_buffers'):
+                        for name, buf in self._buffers.items():
+                            if isinstance(buf, torch.Tensor):
+                                self._buffers[name] = buf.to(device)
+                                # Also update the attribute if it exists
+                                if hasattr(self, name):
+                                    object.__setattr__(self, name, self._buffers[name])
+                    
+                    # Move buffers stored as attributes (persistent buffers)
+                    # Check all attributes for tensors that might be buffers
+                    for attr_name in dir(self):
+                        if not attr_name.startswith('_') and hasattr(self, attr_name):
+                            attr = getattr(self, attr_name)
+                            if isinstance(attr, torch.Tensor) and not isinstance(attr, torch.nn.Parameter):
+                                # This is likely a buffer, move it to device
+                                setattr(self, attr_name, attr.to(device))
+                
+                # Recursively move submodules
+                if hasattr(self, '_modules'):
+                    for module in self._modules.values():
+                        if hasattr(module, 'to'):
+                            module.to(device)
+                
                 return self
 
             def named_modules(self):
@@ -74,6 +102,9 @@ def create_ops(light):
 
             def register_buffer(self, name: str, tensor: torch.Tensor, persistent: bool = True):
                 """Register a buffer (non-trainable parameter) for the module."""
+                # Move buffer to device if model has a device set
+                if hasattr(self, '_device') and isinstance(tensor, torch.Tensor):
+                    tensor = tensor.to(self._device)
                 if persistent:
                     # For persistent buffers, store as regular attribute
                     object.__setattr__(self, name, tensor)

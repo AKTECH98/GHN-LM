@@ -88,10 +88,18 @@ def create_model_from_config(model_type: str, config: Dict, device: str = 'cpu',
         raise ValueError(f"Unknown model type: {model_type}. "
                         f"Supported types: gpt_encoder, mini_gpt, transformers")
     
-    model = model.to(device)
-    # Store device info for lightweight ops models (they don't track device in parameters)
+    # Store device info before moving (needed for register_buffer to work correctly)
+    device_obj = torch.device(device) if isinstance(device, str) else device
     if not hasattr(model, '_device'):
-        model._device = torch.device(device) if isinstance(device, str) else device
+        model._device = device_obj
+    
+    # Move model to device (this will also move buffers in lightweight ops)
+    model = model.to(device)
+    
+    # Ensure device is stored (in case to() didn't set it)
+    if not hasattr(model, '_device'):
+        model._device = device_obj
+    
     return model
 
 
