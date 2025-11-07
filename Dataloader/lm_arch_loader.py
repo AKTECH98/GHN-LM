@@ -52,7 +52,7 @@ def _get_valid_heads(d_model: int, max_heads: int = 32) -> List[int]:
     return valid_heads
 
 
-def create_model_from_config(model_type: str, config: Dict, device: str = 'cpu'):
+def create_model_from_config(model_type: str, config: Dict, device: str = 'cpu', use_lightweight_ops: bool = True):
     """
     Factory function to create different types of language models.
     
@@ -60,6 +60,7 @@ def create_model_from_config(model_type: str, config: Dict, device: str = 'cpu')
         model_type: Type of model ('gpt_encoder', 'mini_gpt', 'transformers')
         config: Model configuration dictionary
         device: Device to create model on
+        use_lightweight_ops: If True, use lightweight ops from ghn3.ops (more memory efficient for GHN training)
     
     Returns:
         Instantiated model on specified device
@@ -79,9 +80,9 @@ def create_model_from_config(model_type: str, config: Dict, device: str = 'cpu')
     if model_type in ['gpt_encoder', 'mini_gpt']:
         # Transformer-based models: map parameters
         _map_transformer_params(config_copy)
-        model = _create_transformer_model(model_type, config_copy)
+        model = _create_transformer_model(model_type, config_copy, use_lightweight_ops=use_lightweight_ops)
     elif model_type == 'transformers':
-        # HuggingFace Transformers models
+        # HuggingFace Transformers models (always use nn.Module, lightweight ops not supported)
         model = _create_transformers_model(config_copy)
     else:
         raise ValueError(f"Unknown model type: {model_type}. "
@@ -103,14 +104,71 @@ def _map_transformer_params(config: Dict) -> None:
         config.pop('mlp_ratio')
 
 
-def _create_transformer_model(model_type: str, config: Dict):
+def _create_transformer_model(model_type: str, config: Dict, use_lightweight_ops: bool = True):
     """Create Transformer-based model."""
-    if model_type == 'gpt_encoder':
-        return GPTEncoderLayerLM(GPTEncoderConfig(**config))
-    elif model_type == 'mini_gpt':
-        return GPTDecoderLM(MiniGPTConfig(**config))
+    if use_lightweight_ops:
+        # Import lightweight ops and temporarily patch nn module
+        from GHN.ops import types_light
+        import torch.nn as nn
+        import importlib
+        
+        # Store original classes
+        _original_linear = nn.Linear
+        _original_layernorm = nn.LayerNorm
+        _original_embedding = nn.Embedding
+        _original_dropout = nn.Dropout
+        _original_module = nn.Module
+        _original_sequential = nn.Sequential
+        _original_modulelist = nn.ModuleList
+        
+        # Patch with lightweight ops
+        if 'Linear' in types_light:
+            nn.Linear = types_light['Linear']
+        if 'LayerNorm' in types_light:
+            nn.LayerNorm = types_light['LayerNorm']
+        if 'Embedding' in types_light:
+            nn.Embedding = types_light['Embedding']
+        if 'Dropout' in types_light:
+            nn.Dropout = types_light['Dropout']
+        if 'Module' in types_light:
+            nn.Module = types_light['Module']
+        if 'Sequential' in types_light:
+            nn.Sequential = types_light['Sequential']
+        if 'ModuleList' in types_light:
+            nn.ModuleList = types_light['ModuleList']
+        
+        try:
+            # Re-import model classes after patching nn.Module so they use lightweight ops
+            import LM.mini_gpt as mini_gpt_module
+            import LM.gpt_encoder_lm as gpt_encoder_module
+            importlib.reload(mini_gpt_module)
+            importlib.reload(gpt_encoder_module)
+            
+            if model_type == 'gpt_encoder':
+                model = gpt_encoder_module.GPTEncoderLayerLM(gpt_encoder_module.GPTEncoderConfig(**config))
+            elif model_type == 'mini_gpt':
+                model = mini_gpt_module.GPTDecoderLM(mini_gpt_module.GPTConfig(**config))
+            else:
+                raise ValueError(f"Unknown Transformer model type: {model_type}")
+        finally:
+            # Restore original classes
+            nn.Linear = _original_linear
+            nn.LayerNorm = _original_layernorm
+            nn.Embedding = _original_embedding
+            nn.Dropout = _original_dropout
+            nn.Module = _original_module
+            nn.Sequential = _original_sequential
+            nn.ModuleList = _original_modulelist
     else:
-        raise ValueError(f"Unknown Transformer model type: {model_type}")
+        # Use regular nn.Module classes
+        if model_type == 'gpt_encoder':
+            model = GPTEncoderLayerLM(GPTEncoderConfig(**config))
+        elif model_type == 'mini_gpt':
+            model = GPTDecoderLM(MiniGPTConfig(**config))
+        else:
+            raise ValueError(f"Unknown Transformer model type: {model_type}")
+    
+    return model
 
 
 def _create_transformers_model(config: Dict):
@@ -224,10 +282,10 @@ def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024,
     
     # Generate Open Source GPT variants with filtering (skip if exclude_oss=True)
     if not exclude_oss:
-        variants.extend(_generate_oss_gpt_variants(max_len, vocab_size, 
-                                                   max_d_model=max_oss_d_model,
-                                                   max_layers=max_oss_layers,
-                                                   exclude_large=exclude_large_oss))
+    variants.extend(_generate_oss_gpt_variants(max_len, vocab_size, 
+                                               max_d_model=max_oss_d_model,
+                                               max_layers=max_oss_layers,
+                                               exclude_large=exclude_large_oss))
     
     return variants
 

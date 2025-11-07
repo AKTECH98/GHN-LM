@@ -538,7 +538,7 @@ class Trainer:
                     return None
                 
                 # Note: Don't delete predicted_models here - they're needed for backward pass
-                # They will be cleaned up by Python's GC after backward pass
+                # They will be cleaned up after backward pass
 
             if loss_predwd is not None:
                 loss += loss_predwd
@@ -576,9 +576,28 @@ class Trainer:
             else:
                 loss.backward()
             
+            # Delete predicted models after backward pass to free memory
+            # They're no longer needed after gradients are computed
+            # Store reference for cleanup (predicted_models is in function scope)
+            predicted_models_to_delete = predicted_models if 'predicted_models' in locals() else None
+            
             # Clear memory after backward pass
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+                # Force garbage collection periodically to free up memory
+                if self._step % 50 == 0:
+                    import gc
+                    gc.collect()
+            
+            # Explicitly delete predicted models after backward and cache clear
+            if predicted_models_to_delete is not None:
+                if isinstance(predicted_models_to_delete, (list, tuple)):
+                    for m in predicted_models_to_delete:
+                        del m
+                elif predicted_models_to_delete is not self._model:  # Don't delete the GHN itself
+                    del predicted_models_to_delete
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
             if self._step == 0 and self.rank == 0 and self.verbose:
                 print_grads(self._model)

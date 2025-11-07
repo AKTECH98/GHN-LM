@@ -119,11 +119,13 @@ def create_ops(light):
         AvgPool2d = modules_light['AvgPool2d']
         MaxPool2d = modules_light['MaxPool2d']
         AdaptiveAvgPool2d = modules_light['AdaptiveAvgPool2d']
+        Embedding = modules_light.get('Embedding', None)  # May not exist in older versions
 
     else:
 
         from torch.nn.modules import Module, ModuleList, Sequential, Dropout, Identity, Linear, Conv2d, \
             BatchNorm2d, LayerNorm, AvgPool2d, MaxPool2d, AdaptiveAvgPool2d, ReLU, GELU, Hardswish
+        from torch.nn import Embedding
         ModuleEmpty = Module
 
     def bn_layer(norm, C):

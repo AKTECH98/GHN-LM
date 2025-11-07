@@ -331,6 +331,34 @@ def create_light_modules(ModuleEmpty, ModuleLight):
             return F.layer_norm(
                 input, self.normalized_shape, self.weight, self.bias, self.eps)
 
+    class Embedding(ModuleLight):
+        """Lightweight Embedding layer for GHN training."""
+
+        def __init__(self, num_embeddings: int, embedding_dim: int, padding_idx: Optional[int] = None,
+                     max_norm: Optional[float] = None, norm_type: float = 2.0, scale_grad_by_freq: bool = False,
+                     sparse: bool = False, device=None, dtype=None):
+            super().__init__()
+            self.num_embeddings = num_embeddings
+            self.embedding_dim = embedding_dim
+            self.padding_idx = padding_idx
+            self.max_norm = max_norm
+            self.norm_type = norm_type
+            self.scale_grad_by_freq = scale_grad_by_freq
+            self.sparse = sparse
+            
+            # Store weight shape for GHN parameter prediction
+            self.weight = [num_embeddings, embedding_dim]
+
+        def forward(self, input: torch.Tensor) -> torch.Tensor:
+            # This will be replaced by GHN-predicted parameters
+            # For now, return a placeholder (GHN will set the actual weight)
+            if isinstance(self.weight, list):
+                # Weight not yet set by GHN - this shouldn't happen in normal flow
+                # but we need to handle it for initialization
+                raise RuntimeError("Embedding weight not initialized. GHN should set this.")
+            return F.embedding(input, self.weight, self.padding_idx, self.max_norm,
+                             self.norm_type, self.scale_grad_by_freq, self.sparse)
+
     types = locals()
     types.pop('ModuleEmpty')
     types.pop('ModuleLight')
