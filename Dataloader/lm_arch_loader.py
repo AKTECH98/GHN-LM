@@ -88,7 +88,11 @@ def create_model_from_config(model_type: str, config: Dict, device: str = 'cpu',
         raise ValueError(f"Unknown model type: {model_type}. "
                         f"Supported types: gpt_encoder, mini_gpt, transformers")
     
-    return model.to(device)
+    model = model.to(device)
+    # Store device info for lightweight ops models (they don't track device in parameters)
+    if not hasattr(model, '_device'):
+        model._device = torch.device(device) if isinstance(device, str) else device
+    return model
 
 
 def _map_transformer_params(config: Dict) -> None:

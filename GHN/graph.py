@@ -463,7 +463,29 @@ class Graph:
             return node_link, fn_name
 
         with torch.enable_grad():
-            device = next(self.model.parameters()).device
+            # Get device from model parameters, or fallback to model device/cpu
+            # Lightweight ops models may not have initialized parameters yet
+            try:
+                device = next(self.model.parameters()).device
+            except StopIteration:
+                # No parameters found (lightweight ops with uninitialized weights)
+                # Try to get device from model attributes
+                if hasattr(self.model, '_device'):
+                    # Device stored when model was created
+                    device = self.model._device
+                elif hasattr(self.model, 'device'):
+                    device = self.model.device
+                elif hasattr(self.model, '_buffers') and len(self.model._buffers) > 0:
+                    # Try to get device from first buffer (e.g., causal_mask)
+                    for buf in self.model._buffers.values():
+                        if isinstance(buf, torch.Tensor):
+                            device = buf.device
+                            break
+                    else:
+                        device = torch.device('cpu')
+                else:
+                    # Default to CPU if no device info found
+                    device = torch.device('cpu')
             # Heuristic defaults for LMs:
             V = getattr(getattr(self.model, "tok", None), "num_embeddings", None)
             if V is None:

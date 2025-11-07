@@ -41,7 +41,15 @@ def create_ops(light):
                 return _InitializeModule(), (self.__class__.__name__,), self.__dict__
 
             def to(self, *args, **kwargs):
-                return None
+                # Store device info for lightweight ops (they don't track device in parameters)
+                if len(args) > 0:
+                    device = args[0]
+                    if isinstance(device, (str, torch.device)):
+                        self._device = torch.device(device) if isinstance(device, str) else device
+                elif 'device' in kwargs:
+                    device = kwargs['device']
+                    self._device = torch.device(device) if isinstance(device, str) else device
+                return self
 
             def named_modules(self):
                 return self._named_modules
