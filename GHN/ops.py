@@ -61,7 +61,18 @@ def create_ops(light):
             def __init__(self):
                 super().__init__()
                 self._parameters = {}
+                self._buffers = {}
                 return
+
+            def register_buffer(self, name: str, tensor: torch.Tensor, persistent: bool = True):
+                """Register a buffer (non-trainable parameter) for the module."""
+                if persistent:
+                    # For persistent buffers, store as regular attribute
+                    object.__setattr__(self, name, tensor)
+                else:
+                    # For non-persistent buffers, store in _buffers dict
+                    self._buffers[name] = tensor
+                    object.__setattr__(self, name, tensor)
 
             def parameters(self, recurse: bool = True):
 

@@ -145,9 +145,13 @@ def _create_transformer_model(model_type: str, config: Dict, use_lightweight_ops
             importlib.reload(gpt_encoder_module)
             
             if model_type == 'gpt_encoder':
-                model = gpt_encoder_module.GPTEncoderLayerLM(gpt_encoder_module.GPTEncoderConfig(**config))
+                # GPTEncoderConfig is imported as GPTConfig in gpt_encoder_lm
+                from LM import GPTEncoderConfig
+                model = gpt_encoder_module.GPTEncoderLayerLM(GPTEncoderConfig(**config))
             elif model_type == 'mini_gpt':
-                model = mini_gpt_module.GPTDecoderLM(mini_gpt_module.GPTConfig(**config))
+                # MiniGPTConfig is imported as GPTConfig in mini_gpt
+                from LM import MiniGPTConfig
+                model = mini_gpt_module.GPTDecoderLM(MiniGPTConfig(**config))
             else:
                 raise ValueError(f"Unknown Transformer model type: {model_type}")
         finally:
@@ -282,10 +286,10 @@ def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024,
     
     # Generate Open Source GPT variants with filtering (skip if exclude_oss=True)
     if not exclude_oss:
-    variants.extend(_generate_oss_gpt_variants(max_len, vocab_size, 
-                                               max_d_model=max_oss_d_model,
-                                               max_layers=max_oss_layers,
-                                               exclude_large=exclude_large_oss))
+        variants.extend(_generate_oss_gpt_variants(max_len, vocab_size, 
+                                                   max_d_model=max_oss_d_model,
+                                                   max_layers=max_oss_layers,
+                                                   exclude_large=exclude_large_oss))
     
     return variants
 
