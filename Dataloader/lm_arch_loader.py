@@ -88,19 +88,7 @@ def create_model_from_config(model_type: str, config: Dict, device: str = 'cpu',
         raise ValueError(f"Unknown model type: {model_type}. "
                         f"Supported types: gpt_encoder, mini_gpt, transformers")
     
-    # Store device info before moving (needed for register_buffer to work correctly)
-    device_obj = torch.device(device) if isinstance(device, str) else device
-    if not hasattr(model, '_device'):
-        model._device = device_obj
-    
-    # Move model to device (this will also move buffers in lightweight ops)
-    model = model.to(device)
-    
-    # Ensure device is stored (in case to() didn't set it)
-    if not hasattr(model, '_device'):
-        model._device = device_obj
-    
-    return model
+    return model.to(device)
 
 
 def _map_transformer_params(config: Dict) -> None:
@@ -157,13 +145,9 @@ def _create_transformer_model(model_type: str, config: Dict, use_lightweight_ops
             importlib.reload(gpt_encoder_module)
             
             if model_type == 'gpt_encoder':
-                # GPTEncoderConfig is imported as GPTConfig in gpt_encoder_lm
-                from LM import GPTEncoderConfig
-                model = gpt_encoder_module.GPTEncoderLayerLM(GPTEncoderConfig(**config))
+                model = gpt_encoder_module.GPTEncoderLayerLM(gpt_encoder_module.GPTEncoderConfig(**config))
             elif model_type == 'mini_gpt':
-                # MiniGPTConfig is imported as GPTConfig in mini_gpt
-                from LM import MiniGPTConfig
-                model = mini_gpt_module.GPTDecoderLM(MiniGPTConfig(**config))
+                model = mini_gpt_module.GPTDecoderLM(mini_gpt_module.GPTConfig(**config))
             else:
                 raise ValueError(f"Unknown Transformer model type: {model_type}")
         finally:
@@ -298,10 +282,10 @@ def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024,
     
     # Generate Open Source GPT variants with filtering (skip if exclude_oss=True)
     if not exclude_oss:
-        variants.extend(_generate_oss_gpt_variants(max_len, vocab_size, 
-                                                   max_d_model=max_oss_d_model,
-                                                   max_layers=max_oss_layers,
-                                                   exclude_large=exclude_large_oss))
+    variants.extend(_generate_oss_gpt_variants(max_len, vocab_size, 
+                                               max_d_model=max_oss_d_model,
+                                               max_layers=max_oss_layers,
+                                               exclude_large=exclude_large_oss))
     
     return variants
 

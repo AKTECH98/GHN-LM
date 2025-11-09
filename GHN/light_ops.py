@@ -259,17 +259,7 @@ def create_light_modules(ModuleEmpty, ModuleLight):
                 self.bias = None
 
         def forward(self, input: torch.Tensor) -> torch.Tensor:
-            # Handle case where weight/bias are lists (not yet set by GHN)
-            # This is needed when Graph tries to do a forward pass to build the graph
-            weight = self.weight
-            bias = self.bias
-            if isinstance(weight, list):
-                device = input.device if hasattr(input, 'device') else 'cpu'
-                weight = torch.zeros(weight[0], weight[1], device=device)
-            if isinstance(bias, list):
-                device = input.device if hasattr(input, 'device') else 'cpu'
-                bias = torch.zeros(bias[0], device=device)
-            return F.linear(input, weight, bias)
+            return F.linear(input, self.weight, self.bias)
 
     class BatchNorm2d(ModuleLight):
 
@@ -338,18 +328,8 @@ def create_light_modules(ModuleEmpty, ModuleLight):
             self.bias = list(normalized_shape)
 
         def forward(self, input: torch.Tensor) -> torch.Tensor:
-            # Handle case where weight/bias are lists (not yet set by GHN)
-            # This is needed when Graph tries to do a forward pass to build the graph
-            weight = self.weight
-            bias = self.bias
-            if isinstance(weight, list):
-                device = input.device if hasattr(input, 'device') else 'cpu'
-                weight = torch.ones(self.normalized_shape, device=device)
-            if isinstance(bias, list):
-                device = input.device if hasattr(input, 'device') else 'cpu'
-                bias = torch.zeros(self.normalized_shape, device=device)
             return F.layer_norm(
-                input, self.normalized_shape, weight, bias, self.eps)
+                input, self.normalized_shape, self.weight, self.bias, self.eps)
 
     class Embedding(ModuleLight):
         """Lightweight Embedding layer for GHN training."""
@@ -373,13 +353,9 @@ def create_light_modules(ModuleEmpty, ModuleLight):
             # This will be replaced by GHN-predicted parameters
             # For now, return a placeholder (GHN will set the actual weight)
             if isinstance(self.weight, list):
-                # Weight not yet set by GHN - create a dummy weight for graph building
-                # This is needed when Graph tries to do a forward pass to build the graph
-                # The actual weight will be set by GHN during training
-                device = input.device if hasattr(input, 'device') else 'cpu'
-                dummy_weight = torch.zeros(self.num_embeddings, self.embedding_dim, device=device)
-                return F.embedding(input, dummy_weight, self.padding_idx, self.max_norm,
-                                 self.norm_type, self.scale_grad_by_freq, self.sparse)
+                # Weight not yet set by GHN - this shouldn't happen in normal flow
+                # but we need to handle it for initialization
+                raise RuntimeError("Embedding weight not initialized. GHN should set this.")
             return F.embedding(input, self.weight, self.padding_idx, self.max_norm,
                              self.norm_type, self.scale_grad_by_freq, self.sparse)
 
