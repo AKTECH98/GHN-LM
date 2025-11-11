@@ -1,12 +1,12 @@
 #!/bin/bash -l
-#SBATCH --job-name=GHN-LM-training-MultiGPU
+#SBATCH --job-name=GHN-D-MultiGPU
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
 #SBATCH --comment="GHN-3 Language Model Training with Multiple GPUs (DDP)"
 #SBATCH --mail-user=slack:@ak3748       # Slack username to notify
 #SBATCH --mail-type=BEGIN,END
 #SBATCH --gres=gpu:a100:2               # Request 2 GPUs (adjust as needed)
-#SBATCH --time=0-01:00:00
+#SBATCH --time=1-00:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8              # More CPUs for multiple GPUs (4 per GPU)
@@ -20,22 +20,24 @@
 NUM_GPUS=${SLURM_GPUS:-2}  # Default to 4, or use SLURM_GPUS if set
 
 # Training configuration
-MODEL_NAME="GHN-3-MultiGPU"
+MODEL_NAME="GHN-D-MultiGPU"
 HEADS=2
 LAYERS=3
 SEQ_LEN=64
-INTERM_EPOCH=1
+INTERM_EPOCH=5
 EPOCHS=75
-BATCH_SIZE=2              # WikiText-2 batch size per GPU
-META_BATCH_SIZE=4        # Total models across all GPUs (will be split evenly)
+BATCH_SIZE=64              # WikiText-2 batch size per GPU
+META_BATCH_SIZE=2        # Total models across all GPUs (will be split evenly, 4 per GPU)
 LR=0.0004
 WD=0.01
 OPTIMIZER="adam"
-LOG_INTERVAL=2
+SCHEDULER="cosine"
+LOG_INTERVAL=50
+NUM_WORKERS=1
 HID=32
 HYPERNET="gatedgnn"
 DECODER="conv"
-MAX_SHAPE="512,512,1,1"  # Reduced from 1024,1024,1,1 to save memory
+MAX_SHAPE="1024,1024,1,1"  # Reduced from 1024,1024,1,1 to save memory
 
 # Model filtering (for ~100K models)
 EXCLUDE_OSS=true         # Exclude OSS models
@@ -141,7 +143,9 @@ TRAIN_ARGS=(
     --lr $LR
     --wd $WD
     --opt $OPTIMIZER
+    --scheduler "$SCHEDULER"
     --log_interval $LOG_INTERVAL
+    --num_workers $NUM_WORKERS
     --hid $HID
     --hypernet $HYPERNET
     --decoder $DECODER

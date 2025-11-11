@@ -13,7 +13,7 @@ model:
 
 training:
   epochs: 45
-  batch_size: 8
+  batch_size: 64
   learning_rate: 0.0005
   weight_decay: 0.01
   warmup_steps: 450

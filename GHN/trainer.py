@@ -125,11 +125,22 @@ class Trainer:
                                                                                      self.start_epoch,
                                                                                      self.start_step))
             else:
-                ghn = from_pretrained(ckpt, debug_level=1).to('cpu')  # get a pretrained GHN
-                model.to('cpu')
-                model = ghn(model, bn_track_running_stats=True, keep_grads=False, reduce_graph=False)  # predict params
-                model = init(model, orth=False, beta=beta)  # add a bit of noise to break symmetry of predicted params
-                model.to(self.rank)
+                # Load checkpoint state dict into the existing model (GHN)
+                log(f'Loading checkpoint from {ckpt}.')
+                if self.ddp:
+                    dist.barrier()  # make sure that all processes load the model before optimizing it
+                    map_location = {'cuda:%d' % 0: device}
+                else:
+                    map_location = self.rank
+                state_dict = torch.load(ckpt, map_location=map_location, weights_only=False)
+                model.load_state_dict(state_dict['state_dict'])
+                if 'epoch' in state_dict:
+                    self.start_epoch = state_dict['epoch']
+                if 'step' in state_dict:
+                    self.start_step = state_dict['step']
+                log('Model with {} parameters loaded from checkpoint.'.format(capacity(model)[1]))
+                if 'epoch' in state_dict and 'step' in state_dict:
+                    log('Resuming from epoch {}, step {}.'.format(self.start_epoch, self.start_step))
 
         self._is_ghn = isinstance(model, GHN) or (hasattr(model, 'module') and isinstance(model.module, GHN))
         if self.ddp:

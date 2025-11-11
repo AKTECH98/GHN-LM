@@ -5,8 +5,19 @@ import torch
 import warnings
 import os
 import json
+import multiprocessing
 from functools import partial
 from torch.utils.tensorboard import SummaryWriter
+
+# Set multiprocessing start method to 'spawn' for CUDA compatibility
+# This is required when using num_workers > 0 with CUDA in DataLoader
+# Must be set before any DataLoader is created
+if __name__ == '__main__':
+    try:
+        multiprocessing.set_start_method('spawn', force=True)
+    except RuntimeError:
+        # Already set, ignore
+        pass
 
 # Suppress NetworkX backend warning
 warnings.filterwarnings("ignore", message="networkx backend defined more than once: nx-loopback")
@@ -237,10 +248,10 @@ def main():
     trainer = Trainer(ghn,
                       opt=args.opt,
                       opt_args={'lr': args.lr, 'weight_decay': args.wd, 'momentum': args.momentum},
-                      scheduler='mstep' if args.scheduler is None else args.scheduler,
-                      scheduler_args={'milestones': args.lr_steps, 'gamma': args.gamma},
+                      scheduler='cosine' if args.scheduler is None else args.scheduler,
+                      scheduler_args={'milestones': [int(args.epochs * 0.3), int(args.epochs * 0.6)], 'gamma': args.gamma} if args.scheduler == 'mstep' else {},
                       n_batches=len(train_queue),
-                      grad_clip=min(args.grad_clip, 1.0),  # Cap gradient clipping for stability
+                      grad_clip=args.grad_clip,  # Use original gradient clipping value
                       device=args.device,
                       log_interval=args.log_interval,
                       amp=args.amp,
@@ -288,6 +299,12 @@ def main():
             except StopIteration:
                 graphs_queue = iter(arch_loader)
                 models, graph_batch, metas = next(graphs_queue)
+
+            # Move models to GPU if they were created on CPU (for multiprocessing workers)
+            # This avoids CUDA OOM in worker processes
+            if args.device == 'cuda':
+                models = [model.to(args.device) if next(model.parameters()).device.type == 'cpu' else model 
+                         for model in models]
 
             # Update trainer with language model data
             trainer.update_lm(input_ids, labels, graphs=graph_batch, models=models)

@@ -12,6 +12,7 @@ Graph HyperNetworks (GHN-3) on language modeling tasks. It supports:
 
 from typing import Dict, List, Optional
 import warnings
+import multiprocessing
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -396,7 +397,10 @@ class GHNLMVariantsDataset(Dataset):
         model_type = cfg.pop("model_type", "tiny_transformer")
         
         # LAZY LOADING: Create model on-demand (not pre-loaded in __init__)
-        model = create_model_from_config(model_type, cfg, self.device)
+        # For multiprocessing workers, create on CPU to avoid CUDA OOM
+        # Models will be moved to GPU in the main process
+        worker_device = 'cpu' if self.device == 'cuda' else self.device
+        model = create_model_from_config(model_type, cfg, worker_device)
         graph = Graph(model, ve_cutoff=self.ve_cutoff, dense=self.dense, verbose=False, 
                      exclude_embeddings=self.exclude_embeddings)
         meta = {"name": name, "model_type": model_type, **cfg}
@@ -407,6 +411,15 @@ class GHNLMVariantsDataset(Dataset):
 # =============================================================================
 # DataLoader Functions
 # =============================================================================
+
+def _collate_ghn_models(items, dense=True):
+    """
+    Collate function to batch models, graphs, and metadata.
+    Must be a module-level function (not nested) for multiprocessing pickling.
+    """
+    models, graphs, metas = zip(*items)
+    gb = GraphBatch(list(graphs), dense=dense)
+    return list(models), gb, list(metas)
 
 def build_ghn_variants_dataloader(
     batch_size: int = 2,
@@ -469,11 +482,16 @@ def build_ghn_variants_dataloader(
         max_layers=max_layers
     )
 
-    def collate_fn(items):
-        """Collate function to batch models, graphs, and metadata."""
-        models, graphs, metas = zip(*items)
-        gb = GraphBatch(list(graphs), dense=dense)
-        return list(models), gb, list(metas)
+    # Create a partial function with dense parameter for pickling compatibility
+    # Using functools.partial to bind the dense parameter
+    from functools import partial
+    collate_fn = partial(_collate_ghn_models, dense=dense)
+
+    # Use 'spawn' multiprocessing context for CUDA compatibility
+    # This is required when num_workers > 0 and models are moved to CUDA in workers
+    mp_context = None
+    if num_workers > 0:
+        mp_context = multiprocessing.get_context('spawn')
 
     loader = DataLoader(
         dataset,
@@ -483,5 +501,6 @@ def build_ghn_variants_dataloader(
         collate_fn=collate_fn,
         pin_memory=torch.cuda.is_available(),
         persistent_workers=False,  # Don't keep workers alive between epochs (saves memory)
+        multiprocessing_context=mp_context,  # Use 'spawn' for CUDA compatibility
     )
     return loader, dataset.configs

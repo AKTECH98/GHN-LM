@@ -376,7 +376,10 @@ class Graph:
         return param_map
 
     def _build_graph(self):
-
+        # Check if model is a proper nn.Module
+        if not isinstance(self.model, torch.nn.Module):
+            raise TypeError(f"Expected model to be an nn.Module, but got {type(self.model)}. "
+                          f"Model might have been corrupted or is not properly initialized.")
 
         param_map = self._build_param_map_with_aliases()
         self.abc = param_map
