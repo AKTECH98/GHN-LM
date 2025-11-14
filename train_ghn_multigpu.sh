@@ -44,6 +44,7 @@ EXCLUDE_OSS=true         # Exclude OSS models
 INCLUDE_EMBEDDINGS=true  # Set to true to include embeddings (uses more memory)
 MAX_D_MODEL=1024         # Maximum d_model for GPT Encoder/Mini GPT variants (~100K models)
 MAX_LAYERS=16            # Maximum layers for GPT Encoder/Mini GPT variants (~100K models)
+MAX_PARAMS=3.5           # Maximum model size in billions (e.g., 3.5 for 3.5B parameters). Recommended: 3.5 for 40GB GPU to avoid OOM
 
 # =============================================================================
 # Job Setup
@@ -121,6 +122,9 @@ fi
 if [ -n "$MAX_LAYERS" ]; then
     echo "  - Max layers: $MAX_LAYERS"
 fi
+if [ -n "$MAX_PARAMS" ]; then
+    echo "  - Max params: ${MAX_PARAMS}B"
+fi
 echo ""
 
 # Validate configuration
@@ -168,6 +172,11 @@ fi
 
 if [ -n "$MAX_LAYERS" ]; then
     TRAIN_ARGS+=(--max_layers "$MAX_LAYERS")
+fi
+
+# Add max_params filtering argument
+if [ -n "$MAX_PARAMS" ]; then
+    TRAIN_ARGS+=(--max_params "$MAX_PARAMS")
 fi
 
 # Run GHN-3 training with torchrun for multi-GPU DDP

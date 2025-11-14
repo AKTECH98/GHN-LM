@@ -14,17 +14,15 @@ import os
 
 import torch
 
-from LM import (
-    GPTEncoderLayerLM, GPTEncoderConfig,
-    GPTDecoderLM, MiniGPTConfig
-)
+from LM import TransformersLM
 from Dataloader.config_loader import load_config_file, list_benchmark_configs
 
 
 def create_model(model_config, vocab_size=50257):
     """Create a model based on the model config."""
-    if model_config.model_type == "gpt_encoder":
-        config = GPTEncoderConfig(
+    if model_config.model_type == "transformers":
+        return TransformersLM(
+            model_name=model_config.model_name,
             vocab_size=vocab_size,
             d_model=model_config.d_model,
             n_layer=model_config.n_layer,
@@ -33,22 +31,10 @@ def create_model(model_config, vocab_size=50257):
             max_seq_len=model_config.max_seq_len,
             p_drop=model_config.p_drop
         )
-        return GPTEncoderLayerLM(config)
-    
-    elif model_config.model_type == "mini_gpt":
-        config = MiniGPTConfig(
-            vocab_size=vocab_size,
-            d_model=model_config.d_model,
-            n_layer=model_config.n_layer,
-            n_head=model_config.n_head,
-            d_ff=model_config.d_ff,
-            max_seq_len=model_config.max_seq_len,
-            p_drop=model_config.p_drop
-        )
-        return GPTDecoderLM(config)
     
     else:
-        raise ValueError(f"Unknown model type: {model_config.model_type}")
+        raise ValueError(f"Unknown model type: {model_config.model_type}. "
+                        f"Supported types: transformers")
 
 
 def main():

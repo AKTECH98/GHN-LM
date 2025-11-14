@@ -1,12 +1,12 @@
 #!/bin/bash -l
-#SBATCH --job-name=GHN-D-2
+#SBATCH --job-name=GHN-D-Test
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
 #SBATCH --comment="GHN-3 Language Model Training with TensorBoard"
 #SBATCH --mail-user=slack:@ak3748       # Slack username to notify
 #SBATCH --mail-type=BEGIN,END
 #SBATCH --gres=gpu:a100:1
-#SBATCH --time=1-00:00:00
+#SBATCH --time=0-00:10:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -56,12 +56,12 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # Run GHN-3 training with enhanced features
 # Using the updated train_ghn.py script with organized config structure
 python train_ghn.py \
-    --model_name "GHN-D-2" \
+    --model_name "GHN-D-Test" \
     --heads 2\
     --layers 3 \
     --seq_len 64 \
     --interm_epoch 5 \
-    --save "Experiment/GHN-D-2" \
+    --save "Experiment/GHN-D-Test" \
     --epochs 75 \
     --batch_size 64 \
     --meta_batch_size 1 \
@@ -69,16 +69,14 @@ python train_ghn.py \
     --wd 0.01 \
     --opt adam \
     --scheduler cosine \
-    --amp \
+    # --amp \
     --include_embeddings \
-    --exclude_oss \
-    --max_d_model 1024 \
-    --max_layers 16 \
     --log_interval 100 \
     --num_workers 1 \
     --hid 32 \
     --hypernet gatedgnn \
     --decoder conv \
-    --max_shape "1024,1024,1,1"
+    --max_shape "1024,1024,1,1" \
+    --max_params 3.5
 
 echo "Job finished at $(date)"

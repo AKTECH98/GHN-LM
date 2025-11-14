@@ -24,7 +24,7 @@ warnings.filterwarnings("ignore", message="networkx backend defined more than on
 
 from ppuda.config import init_config
 from GHN import GHN3, log, Trainer, setup_ddp, clean_ddp
-from Dataloader.lm_arch_loader import build_ghn_variants_dataloader
+from Dataloader.lm_arch_loader import build_lm_variants_dataloader
 from Dataloader.wikitext2_loader import build_wikitext2
 
 log = partial(log, flush=True)
@@ -44,22 +44,8 @@ def parse_arguments():
                                                             ' https://github.com/facebookresearch/ppuda to train GHN-2')
     parser.add_argument('--interm_epoch', type=int, default=5, help='intermediate epochs to keep checkpoints for')
     parser.add_argument('--include_embeddings', action='store_true', help='include embedding layers in GHN prediction (default: exclude embeddings)')
+    parser.add_argument('--max_params', type=float, default=None, help='Maximum number of parameters (in billions, e.g., 4.0 for 4B). Filters out larger models to avoid OOM. Recommended: 4.0-5.0 for 40GB GPU.')
     
-    # OSS model filtering arguments
-    parser.add_argument('--max_oss_d_model', type=int, default=None, 
-                       help='Maximum d_model for OSS models (filters large models). Suggested: 2048 for <30GB, 768 for <10GB memory')
-    parser.add_argument('--max_oss_layers', type=int, default=None,
-                       help='Maximum layers for OSS models (filters deep models). Suggested: 24 for <30GB, 12 for <10GB memory')
-    parser.add_argument('--exclude_large_oss', action='store_true',
-                       help='Exclude all OSS models with >1B parameters (GPT-J-6B, Mistral-7B, MPT-7B, GPT-Neo-2.7B, GPT-2-XL). Recommended for <30GB GPU')
-    parser.add_argument('--exclude_oss', action='store_true',
-                       help='Exclude ALL OSS models from training (only train on GPT Encoder and Mini GPT variants)')
-    
-    # GPT Encoder/Mini GPT filtering arguments (for memory efficiency)
-    parser.add_argument('--max_d_model', type=int, default=None,
-                       help='Maximum d_model for GPT Encoder/Mini GPT variants (filters large models). Suggested: 512 for <40GB memory, 768 for <80GB')
-    parser.add_argument('--max_layers', type=int, default=None,
-                       help='Maximum layers for GPT Encoder/Mini GPT variants (filters deep models). Suggested: 8 for <40GB memory, 12 for <80GB')
     
     # PPUDA-specific arguments (common training args handled by init_config)
     
@@ -132,7 +118,7 @@ def main():
     num_classes = wt2_data["vocab_size"]  
 
     # Load language model architectures
-    arch_loader, arch_configs = build_ghn_variants_dataloader(
+    arch_loader, arch_configs = build_lm_variants_dataloader(
         batch_size=args.meta_batch_size // (ddp.world_size if ddp.ddp else 1),
         vocab_size=num_classes,
         max_len=args.seq_len,  # Match model max_seq_len to training seq_len
@@ -141,35 +127,10 @@ def main():
         ve_cutoff=args.virtual_edges,
         dense=True,  # GHN-3 requires dense graphs
         exclude_embeddings=not args.include_embeddings,  # Convert include_embeddings to exclude_embeddings
-        max_oss_d_model=args.max_oss_d_model,
-        max_oss_layers=args.max_oss_layers,
-        exclude_large_oss=args.exclude_large_oss,
-        exclude_oss=args.exclude_oss,
-        max_d_model=args.max_d_model,
-        max_layers=args.max_layers
+        max_params=int(args.max_params * 1e9) if args.max_params is not None else None,  # Convert billions to actual count
     )
     
-    # Log filtering info
-    if args.exclude_oss:
-        log('OSS models excluded: Only training on GPT Encoder and Mini GPT variants')
-    elif args.exclude_large_oss or args.max_oss_d_model or args.max_oss_layers:
-        log('OSS model filtering enabled:')
-        if args.exclude_large_oss:
-            log('  - Excluding large OSS models (>1B parameters)')
-        if args.max_oss_d_model:
-            log(f'  - Max d_model for OSS: {args.max_oss_d_model}')
-        if args.max_oss_layers:
-            log(f'  - Max layers for OSS: {args.max_oss_layers}')
-    
-    # Log GPT Encoder/Mini GPT filtering info
-    if args.max_d_model or args.max_layers:
-        log('GPT Encoder/Mini GPT filtering enabled:')
-        if args.max_d_model:
-            log(f'  - Max d_model: {args.max_d_model}')
-        if args.max_layers:
-            log(f'  - Max layers: {args.max_layers}')
-    
-    log(f'Total architecture variants: {len(arch_configs):,}')
+    log(f'Loaded {len(arch_configs):,} language model variants for training')
     
     
 

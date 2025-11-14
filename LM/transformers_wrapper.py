@@ -7,8 +7,8 @@ to make them compatible with the GHN training system.
 
 import torch
 import torch.nn as nn
-from typing import Optional, Tuple, Dict, Any
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+from typing import Optional, Tuple, Dict
+from transformers import AutoConfig, AutoModelForCausalLM
 from .base import BaseConfig, BaseLanguageModel
 
 
@@ -39,31 +39,82 @@ class TransformersConfig(BaseConfig):
 class TransformersLM(BaseLanguageModel):
     """Wrapper around Hugging Face Transformers models for GHN training."""
     
-    def __init__(self, cfg: TransformersConfig):
-        super().__init__(cfg)
+    def __init__(
+        self,
+        model_name: str = None,
+        cfg: TransformersConfig = None,
+        vocab_size: int = None,
+        d_model: int = None,
+        n_layer: int = None,
+        n_head: int = None,
+        d_ff: int = None,
+        max_seq_len: int = None,
+        p_drop: float = None,
+        tie_weights: bool = False,
+        **kwargs
+    ):
+        """
+        Initialize TransformersLM.
+        
+        Can be called in two ways:
+        1. With a config object: TransformersLM(cfg=TransformersConfig(...))
+        2. With direct parameters: TransformersLM(model_name="gpt2", vocab_size=50257, ...)
+        """
+        # If cfg is provided, use it; otherwise create from kwargs
+        if cfg is not None:
+            if model_name is not None or any([vocab_size, d_model, n_layer, n_head, d_ff, max_seq_len, p_drop]):
+                raise ValueError("Cannot provide both cfg and individual parameters. Use either cfg or individual parameters.")
+            config = cfg
+        else:
+            if model_name is None:
+                raise ValueError("model_name is required. Provide either cfg or model_name parameter.")
+            # Create config from kwargs
+            config = TransformersConfig(
+                model_name=model_name,
+                vocab_size=vocab_size,
+                d_model=d_model,
+                n_layer=n_layer,
+                n_head=n_head,
+                d_ff=d_ff,
+                max_seq_len=max_seq_len,
+                p_drop=p_drop,
+                tie_weights=tie_weights,
+                **kwargs
+            )
+        
+        super().__init__(config)
+        
+        # Validate that d_model is divisible by n_head before creating the model
+        if config.d_model is not None and config.n_head is not None:
+            if config.d_model % config.n_head != 0:
+                raise ValueError(
+                    f"`d_model` must be divisible by `n_head` "
+                    f"(got `d_model`: {config.d_model} and `n_head`: {config.n_head}). "
+                    f"Please ensure d_model % n_head == 0."
+                )
         
         # Load the model configuration
-        self.hf_config = AutoConfig.from_pretrained(cfg.model_name, **cfg.kwargs)
+        self.hf_config = AutoConfig.from_pretrained(config.model_name, **config.kwargs)
         
         # Override config parameters if specified
-        if cfg.vocab_size is not None:
-            self.hf_config.vocab_size = cfg.vocab_size
-        if cfg.d_model is not None:
-            self.hf_config.n_embd = cfg.d_model
-            self.hf_config.d_model = cfg.d_model
-        if cfg.n_layer is not None:
-            self.hf_config.n_layer = cfg.n_layer
-        if cfg.n_head is not None:
-            self.hf_config.n_head = cfg.n_head
-        if cfg.d_ff is not None:
-            self.hf_config.n_inner = cfg.d_ff
-        if cfg.max_seq_len is not None:
-            self.hf_config.n_positions = cfg.max_seq_len
-            self.hf_config.max_position_embeddings = cfg.max_seq_len
-        if cfg.p_drop is not None:
-            self.hf_config.attn_pdrop = cfg.p_drop
-            self.hf_config.embd_pdrop = cfg.p_drop
-            self.hf_config.resid_pdrop = cfg.p_drop
+        if config.vocab_size is not None:
+            self.hf_config.vocab_size = config.vocab_size
+        if config.d_model is not None:
+            self.hf_config.n_embd = config.d_model
+            self.hf_config.d_model = config.d_model
+        if config.n_layer is not None:
+            self.hf_config.n_layer = config.n_layer
+        if config.n_head is not None:
+            self.hf_config.n_head = config.n_head
+        if config.d_ff is not None:
+            self.hf_config.n_inner = config.d_ff
+        if config.max_seq_len is not None:
+            self.hf_config.n_positions = config.max_seq_len
+            self.hf_config.max_position_embeddings = config.max_seq_len
+        if config.p_drop is not None:
+            self.hf_config.attn_pdrop = config.p_drop
+            self.hf_config.embd_pdrop = config.p_drop
+            self.hf_config.resid_pdrop = config.p_drop
         
         # Create the model
         self.model = AutoModelForCausalLM.from_config(self.hf_config)
@@ -123,17 +174,21 @@ class TransformersLM(BaseLanguageModel):
         """Return model parameters for GHN compatibility."""
         return self.model.parameters()
     
-    def named_parameters(self):
+    def named_parameters(self, *args, **kwargs):
         """Return named parameters for GHN compatibility."""
-        return self.model.named_parameters()
+        return self.model.named_parameters(*args, **kwargs)
     
     def modules(self):
         """Return model modules for GHN compatibility."""
         return self.model.modules()
     
-    def named_modules(self):
+    def named_modules(self, memo=None, prefix='', remove_duplicate=True):
         """Return named modules for GHN compatibility."""
-        return self.model.named_modules()
+        return self.model.named_modules(memo=memo, prefix=prefix, remove_duplicate=remove_duplicate)
+    
+    def named_buffers(self, *args, **kwargs):
+        """Return named buffers for GHN compatibility."""
+        return self.model.named_buffers(*args, **kwargs)
     
     def to(self, device):
         """Move model to device."""
@@ -153,90 +208,4 @@ class TransformersLM(BaseLanguageModel):
 
 def create_transformers_model(model_name: str, **kwargs) -> TransformersLM:
     """Factory function to create Transformers-based models."""
-    config = TransformersConfig(model_name=model_name, **kwargs)
-    return TransformersLM(config)
-
-
-# Predefined model configurations for popular OSS models
-OSS_MODEL_CONFIGS = {
-    "gpt2-small": {
-        "model_name": "gpt2",
-        "d_model": 768,
-        "n_layer": 12,
-        "n_head": 12,
-        "d_ff": 3072,
-        "max_seq_len": 1024,
-    },
-    "gpt2-medium": {
-        "model_name": "gpt2-medium",
-        "d_model": 1024,
-        "n_layer": 24,
-        "n_head": 16,
-        "d_ff": 4096,
-        "max_seq_len": 1024,
-    },
-    "gpt2-large": {
-        "model_name": "gpt2-large",
-        "d_model": 1280,
-        "n_layer": 36,
-        "n_head": 20,
-        "d_ff": 5120,
-        "max_seq_len": 1024,
-    },
-    "gpt2-xl": {
-        "model_name": "gpt2-xl",
-        "d_model": 1600,
-        "n_layer": 48,
-        "n_head": 25,
-        "d_ff": 6400,
-        "max_seq_len": 1024,
-    },
-    "gpt-neo-125m": {
-        "model_name": "EleutherAI/gpt-neo-125M",
-        "d_model": 768,
-        "n_layer": 12,
-        "n_head": 12,
-        "d_ff": 3072,
-        "max_seq_len": 2048,
-    },
-    "gpt-neo-1.3b": {
-        "model_name": "EleutherAI/gpt-neo-1.3B",
-        "d_model": 2048,
-        "n_layer": 24,
-        "n_head": 16,
-        "d_ff": 8192,
-        "max_seq_len": 2048,
-    },
-    "gpt-neo-2.7b": {
-        "model_name": "EleutherAI/gpt-neo-2.7B",
-        "d_model": 2560,
-        "n_layer": 32,
-        "n_head": 20,
-        "d_ff": 10240,
-        "max_seq_len": 2048,
-    },
-    "gpt-j-6b": {
-        "model_name": "EleutherAI/gpt-j-6B",
-        "d_model": 4096,
-        "n_layer": 28,
-        "n_head": 16,
-        "d_ff": 16384,
-        "max_seq_len": 2048,
-    },
-    "mistral-7b": {
-        "model_name": "mistralai/Mistral-7B-v0.1",
-        "d_model": 4096,
-        "n_layer": 32,
-        "n_head": 32,
-        "d_ff": 14336,
-        "max_seq_len": 32768,
-    },
-    "mpt-7b": {
-        "model_name": "mosaicml/mpt-7b",
-        "d_model": 4096,
-        "n_layer": 32,
-        "n_head": 32,
-        "d_ff": 14336,
-        "max_seq_len": 2048,
-    },
-}
+    return TransformersLM(model_name=model_name, **kwargs)

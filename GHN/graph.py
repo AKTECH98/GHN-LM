@@ -345,13 +345,15 @@ class Graph:
         """
         # Primary/canonical names from named_parameters (unique by id)
         param_map = {}
-        for name, p in self.model.named_parameters(recurse=True):
+        # named_parameters() recurses by default in PyTorch 2.8.0+
+        for name, p in self.model.named_parameters():
             pid = id(p)
             if pid not in param_map:
                 param_map[pid] = (name, self._owner_module(name), {"aliases": [], "is_buffer": False})
 
         # Add buffers (rarely appear as leaves, but include for completeness)
-        for name, b in self.model.named_buffers(recurse=True):
+        # named_buffers() recurses by default in PyTorch 2.8.0+
+        for name, b in self.model.named_buffers():
             pid = id(b)
             if pid not in param_map:
                 param_map[pid] = (name, self._owner_module(name), {"aliases": [], "is_buffer": True})
