@@ -6,7 +6,7 @@
 #SBATCH --mail-user=slack:@ak3748       # Slack username to notify
 #SBATCH --mail-type=BEGIN,END
 #SBATCH --gres=gpu:a100:1
-#SBATCH --time=1-00:00:00
+#SBATCH --time=0-01:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -73,7 +73,7 @@ python train_ghn.py \
     --include_embeddings \
     --exclude_oss \
     --max_d_model 1024 \
-    --max_layers 16 \
+    --max_layers 20 \
     --log_interval 100 \
     --num_workers 1 \
     --hid 32 \

@@ -211,8 +211,8 @@ def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024,
     # Define parameter ranges
     d_models = [32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 480, 512, 
                 576, 640, 704, 768, 832, 896, 960, 1024, 1152, 1280, 1408, 1536, 1664, 1792, 1920, 2048]
-    layer_counts = list(range(1, 17))  # 1-16 layers
-    mlp_ratios = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8]
+    layer_counts = list(range(1, 21))  # 1-20 layers (increased to reach ~130K variants)
+    mlp_ratios = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5]  # Added 8.5 to reach ~130K variants
     
     # Filter parameter ranges based on max_d_model and max_layers
     if max_d_model is not None:
