@@ -471,7 +471,7 @@ class Trainer:
                                                      graphs.to_device(self.device),
                                                      bn_track_running_stats=True,
                                                      keep_grads=True,
-                                                     reduce_graph=False
+                                                     reduce_graph=False  # Must be False for language models (all params needed)
                                                      )
                     else:
                         # Fallback to original behavior
@@ -487,7 +487,7 @@ class Trainer:
                                                      graphs.to_device(self.device),
                                                      bn_track_running_stats=True,
                                                      keep_grads=True,
-                                                     reduce_graph=False
+                                                     reduce_graph=False  # Must be False for language models (all params needed)
                                                      )
                     
                     if self.predparam_wd > 0:
@@ -524,9 +524,9 @@ class Trainer:
                         
                         # Check for NaN loss (edge case: all labels are -100)
                         if torch.isnan(model_loss):
-                            print(f"Warning: NaN loss detected at step {self._step} for model {type(model).__name__}")
-                            print(f"  Valid targets: {(labels != -100).sum().item()}")
-                            print(f"  Total targets: {labels.numel()}")
+                            log(f"Warning: NaN loss detected at step {self._step} for model {type(model).__name__}")
+                            log(f"  Valid targets: {(labels != -100).sum().item()}")
+                            log(f"  Total targets: {labels.numel()}")
                             # Skip this model's loss contribution
                             continue
                         
@@ -535,8 +535,8 @@ class Trainer:
                         # Clear intermediate tensors to save memory
                         del logits_model
                     except Exception as e:
-                        print(f"Error in model forward pass: {e}")
-                        print(f"Model: {model}")
+                        log(f"Error in model forward pass: {e}")
+                        log(f"Model: {model}")
                         raise
 
                 # Average loss across models
@@ -544,8 +544,8 @@ class Trainer:
                     loss = loss / len(logits)
                 else:
                     # All models produced NaN loss - skip this batch
-                    print(f"Warning: All models produced NaN loss at step {self._step}")
-                    print(f"  Skipping this batch")
+                    log(f"Warning: All models produced NaN loss at step {self._step}")
+                    log(f"  Skipping this batch")
                     return None
                 
                 # Note: Don't delete predicted_models here - they're needed for backward pass
@@ -553,6 +553,45 @@ class Trainer:
 
             if loss_predwd is not None:
                 loss += loss_predwd
+
+            # Debug: Check gradient connection
+            if self._step == 0 and self.amp and self._is_ghn:
+                # Parameters are leaf nodes, so they won't have grad_fn
+                # But we can check if the predicted tensors (before assignment) would have grad_fn
+                # The key is that when keep_grads=True, the tensors assigned should maintain connection
+                log(f"DEBUG: Checking predicted models parameter connection...")
+                # Check if any predicted model parameters require grad
+                pred_params_require_grad = []
+                for m in predicted_models:
+                    for p in m.parameters():
+                        if p.requires_grad:
+                            pred_params_require_grad.append(p)
+                log(f"DEBUG: Predicted models params requiring grad: {len(pred_params_require_grad)}")
+                # Check if GHN parameters require grad
+                ghn_params_require_grad = [p for p in self._model.parameters() if p.requires_grad]
+                log(f"DEBUG: GHN params requiring grad: {len(ghn_params_require_grad)}")
+                # The issue is that predicted params have gradients but don't flow to GHN
+                # This suggests the computation graph connection is broken
+
+            # Note: Don't delete predicted_models here - they're needed for backward pass
+            # Store reference for debugging
+            _predicted_models_for_debug = predicted_models if self._is_ghn else None
+
+            # Debug: Check if loss is connected to computation graph
+            if self.amp:
+                if loss.requires_grad == False:
+                    raise RuntimeError(f"Loss does not require gradients! This will cause AMP scaler error. "
+                                     f"Loss type: {type(loss)}, requires_grad: {loss.requires_grad}, "
+                                     f"loss.grad_fn: {loss.grad_fn}")
+                # Check if loss is connected to model parameters
+                if loss.grad_fn is None:
+                    log(f"WARNING: Loss has requires_grad=True but grad_fn is None! This suggests the graph is broken.")
+                    log(f"  Loss dtype: {loss.dtype}, device: {loss.device}")
+                    # Try to find if any model parameters require grad
+                    model_requires_grad = any(p.requires_grad for p in self._model.parameters())
+                    log(f"  Model has parameters requiring grad: {model_requires_grad}")
+                    if not model_requires_grad:
+                        raise RuntimeError("Model parameters don't require gradients! Check model setup.")
 
             loss_avg = loss_check(loss)
 
@@ -581,6 +620,29 @@ class Trainer:
                 # Scales the loss, and calls backward()
                 # to create scaled gradients
                 self.scaler.scale(loss).backward()
+
+                # Debug: Check if gradients were computed for model parameters
+                if self._step == 0:
+                    model_params_with_grad = [p for p in self._model.parameters() if p.grad is not None]
+                    optimizer_params = []
+                    for group in self._optimizer.param_groups:
+                        optimizer_params.extend(group['params'])
+                    optimizer_params_with_grad = [p for p in optimizer_params if p.grad is not None]
+                    log(f"DEBUG: After backward - Model params with grad: {len(model_params_with_grad)}/{sum(1 for _ in self._model.parameters())}")
+                    log(f"DEBUG: Optimizer params with grad: {len(optimizer_params_with_grad)}/{len(optimizer_params)}")
+                    if len(optimizer_params_with_grad) == 0:
+                        log("ERROR: No gradients computed for optimizer parameters!")
+                        log(f"  Loss requires_grad: {loss.requires_grad}, grad_fn: {loss.grad_fn}")
+                        # Check if predicted_models have gradients
+                        if _predicted_models_for_debug is not None:
+                            if isinstance(_predicted_models_for_debug, (list, tuple)):
+                                pred_params_with_grad = []
+                                for m in _predicted_models_for_debug:
+                                    pred_params_with_grad.extend([p for p in m.parameters() if p.grad is not None])
+                                log(f"  Predicted models params with grad: {len(pred_params_with_grad)}")
+                            else:
+                                pred_params_with_grad = [p for p in _predicted_models_for_debug.parameters() if p.grad is not None]
+                                log(f"  Predicted model params with grad: {len(pred_params_with_grad)}")
 
                 # Unscales the gradients of optimizer's assigned params in-place
                 self.scaler.unscale_(self._optimizer)

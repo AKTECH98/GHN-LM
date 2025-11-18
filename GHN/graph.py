@@ -328,9 +328,21 @@ class Graph:
     def _owner_module(self, qname: str):
         if not qname:
             return self.model
+        # First try: use named_modules to find the module directly (most reliable)
+        # Remove .weight or .bias to get the module path
+        module_path = qname.rsplit('.', 1)[0] if '.' in qname else qname
+        for mod_name, mod in self.model.named_modules():
+            if mod_name == module_path:
+                return mod
+        # Second try: direct attribute access (for unwrapped models)
         parts = qname.split(".")[:-1]
         try:
             mod = self.model
+            # Handle wrapped models (e.g., TransformersLM wraps model in self.model)
+            if hasattr(mod, 'model') and isinstance(getattr(mod, 'model'), torch.nn.Module):
+                # Check if the path starts with attributes of the wrapped model
+                if parts and hasattr(getattr(mod, 'model'), parts[0]):
+                    mod = getattr(mod, 'model')
             for p in parts:
                 mod = getattr(mod, p)
             return mod

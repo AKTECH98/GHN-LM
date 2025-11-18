@@ -20,6 +20,7 @@ class ModelConfig:
     d_ff: int
     max_seq_len: int
     p_drop: float
+    model_name: str = "gpt2"  # Default base model name for transformers
 
 
 @dataclass
@@ -77,6 +78,10 @@ def load_config_file(config_path: str) -> tuple[ModelConfig, TrainingConfig, Dat
     for field in required_model_fields:
         if field not in model_dict:
             raise ValueError(f"Missing required field '{field}' in model section")
+    
+    # Add default model_name for transformers if not provided
+    if model_dict.get('model_type') == 'transformers' and 'model_name' not in model_dict:
+        model_dict['model_name'] = 'gpt2'
     
     model_config = ModelConfig(**model_dict)
     

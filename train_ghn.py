@@ -137,11 +137,17 @@ def main():
     hid = args.hid
 
     config = {'num_classes': num_classes, 'hypernet': args.hypernet,
-              'decoder': args.decoder, 'weight_norm': args.weight_norm, 've': args.virtual_edges > 1,
+              'decoder': args.decoder, 'weight_norm': True, 've': args.virtual_edges > 1,  # Force weight_norm=True for language models
               'layernorm': args.ln, 'hid': hid, 'layers': args.layers, 'heads': args.heads, 'is_ghn2': ghn2,
-              'exclude_embeddings': not args.include_embeddings, 'max_shape': args.max_shape}
+              'exclude_embeddings': not args.include_embeddings, 'max_shape': args.max_shape,
+              'lm_scale_factor': 10.0}  # Increased from 1.0 to 10.0 - training showed random predictions (perplexity=22032) with 1.0
 
     ghn = GHN3(**config, debug_level=args.debug)
+    
+    # Log the actual weight_norm value being used (may differ from args.weight_norm)
+    if ddp.rank == 0:
+        log(f'GHN created with weight_norm={ghn.weight_norm} (forced to True for language models)')
+        log(f'GHN created with lm_scale_factor={ghn.lm_scale_factor}')
     
     # Save config metadata to experiment directory
     if ddp.rank == 0:
@@ -149,7 +155,7 @@ def main():
         ghn_config = {
             'hypernet': args.hypernet,
             'decoder': args.decoder,
-            'weight_norm': args.weight_norm,
+            'weight_norm': True,  # Forced to True for language models (required for normalization)
             'virtual_edges': args.virtual_edges,
             'layernorm': args.ln,
             'hid': args.hid,
@@ -157,7 +163,8 @@ def main():
             'heads': args.heads,
             'is_ghn2': ghn2,
             'exclude_embeddings': not args.include_embeddings,
-            'max_shape': args.max_shape
+            'max_shape': args.max_shape,
+            'lm_scale_factor': 10.0  # Increased from 1.0 to 10.0 - training showed random predictions with 1.0
         }
         
         training_config = {
