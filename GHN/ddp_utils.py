@@ -91,3 +91,27 @@ def avg_ddp_metric(metric):
     dist.all_gather(lst, metric)
     avg = torch.stack(lst).mean().view_as(metric)
     return avg
+
+
+def sync_amp_scaler(scaler):
+    """
+    Synchronize AMP GradScaler state across all DDP processes.
+    This is critical for DDP training with AMP to prevent NaN gradients.
+    
+    When one GPU detects overflow and reduces its scale, all GPUs must
+    use the same scale to prevent numerical mismatches during gradient reduction.
+    
+    :param scaler: torch.cuda.amp.GradScaler instance
+    """
+    if not is_ddp():
+        return
+    
+    # Get current scale from the scaler (it's a tensor)
+    scale_tensor = scaler._scale.clone()
+    
+    # Use all_reduce with MIN operation to ensure all processes use the minimum scale
+    # If any process detected overflow, all should use the reduced scale
+    dist.all_reduce(scale_tensor, op=dist.ReduceOp.MIN)
+    
+    # Update all scalers to use the synchronized scale
+    scaler._scale.data.copy_(scale_tensor)

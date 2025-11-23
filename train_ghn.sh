@@ -1,16 +1,16 @@
 #!/bin/bash -l
-#SBATCH --job-name=GHN-D-Test
+#SBATCH --job-name=GHN-GPT-0.4B-32-Warmup
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
 #SBATCH --comment="GHN-3 Language Model Training with TensorBoard"
 #SBATCH --mail-user=slack:@ak3748       # Slack username to notify
 #SBATCH --mail-type=BEGIN,END
 #SBATCH --gres=gpu:a100:1
-#SBATCH --time=0-00:10:00
+#SBATCH --time=1-00:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=32g
+#SBATCH --mem=40g
 
 # Extract job name from SLURM_JOB_NAME or use default
 JOB_NAME=${SLURM_JOB_NAME:-GHN_LM}
@@ -56,20 +56,20 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # Run GHN-3 training with enhanced features
 # Using the updated train_ghn.py script with organized config structure
 python train_ghn.py \
-    --model_name "GHN-D-Test" \
+    --model_name "GHN-GPT-0.4B-32-Warmup" \
     --heads 2\
     --layers 3 \
     --seq_len 64 \
     --interm_epoch 5 \
-    --save "Experiment/GHN-D-Test" \
+    --save "Experiment/GHN-GPT-0.4B-32-Warmup" \
     --epochs 75 \
-    --batch_size 64 \
-    --meta_batch_size 1 \
-    --lr 0.0004 \
-    --wd 0.01 \
+    --batch_size 32 \
+    --meta_batch_size 4 \
+    --lr 0.003 \
+    --wd 0.0005 \
     --opt adam \
-    --scheduler cosine \
-    # --amp \
+    --scheduler cosine-warmup-steps1000-init_lr0.003 \
+    --amp \
     --include_embeddings \
     --log_interval 100 \
     --num_workers 1 \
@@ -77,6 +77,6 @@ python train_ghn.py \
     --hypernet gatedgnn \
     --decoder conv \
     --max_shape "1024,1024,1,1" \
-    --max_params 3.5
+    --max_params 0.4
 
 echo "Job finished at $(date)"

@@ -1,0 +1,35 @@
+# Benchmark 14: Large Model Configuration (Transformers Dataset)
+# ~50M parameters - High performance
+# Uses transformers model type (new model dataset) with GHN training parameters
+
+model:
+  model_type: "transformers"
+  vocab_size: 50257
+  d_model: 512
+  n_layer: 8
+  n_head: 8
+  d_ff: 2048
+  max_seq_len: 64
+  p_drop: 0.1
+
+training:
+  epochs: 75
+  batch_size: 64
+  learning_rate: 0.0004
+  weight_decay: 0.01
+  warmup_steps: 750
+  max_grad_norm: 1.0
+  save_interval: 15
+  eval_interval: 5
+  log_interval: 75
+  device: "cuda"
+  mixed_precision: true
+  gradient_accumulation_steps: 4
+  seed: 42
+  early_stopping_patience: 5
+  early_stopping_min_delta: 0.001
+
+data:
+  seq_len: 64
+  num_workers: 4
+

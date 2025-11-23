@@ -145,6 +145,7 @@ class GHN3(GHN):
         self.lm_scale_factor = lm_scale_factor  # Scaling factor for language model parameters
 
         self._is_ghn2 = is_ghn2
+        self._efficiency_warning_shown = False
         if not self._is_ghn2:
 
             self.gnn = SequentialMultipleInOut(*[
@@ -234,11 +235,13 @@ class GHN3(GHN):
 
         debug_info = self._init_debug_info(nets_torch, graphs)
 
-        if self.debug_level <= 0 and self.training and len(nets_torch) > 1:
+        if self.debug_level <= 0 and self.training and len(nets_torch) > 1 and not self._efficiency_warning_shown:
             for net in nets_torch:
                 if isinstance(net, nn.Module):
                     log('WARNING: for efficiency, it is recommended to '
                         'use ghn3.ops as base classes during training the GHN.')
+                    self._efficiency_warning_shown = True
+                    break
 
         # Find mapping between embeddings and network parameters
         param_groups, params_map = self._map_net_params(graphs,
@@ -860,44 +863,20 @@ class GHN3(GHN):
                 # for layers followed by rely increase the weight scale
                 beta = 2.
 
-            # Check if this is a language model parameter (large vocabulary dimension)
-            is_lm = sz[0] > 1000 or sz[1] > 1000
-            
-            if is_lm:
-                # For language models, skip fan-in normalization entirely
-                # Fan-in normalization is too aggressive for large vocabularies (divides by sqrt(50257) ≈ 224x)
-                # Instead, we'll use a simple scaling approach that matches transformer initialization
-                # Standard transformer init: std = 0.02, which for 64-dim gives weights around 0.02
-                # We'll normalize by output dimension (like transformer init) and then scale
-                output_dim = sz[0] if sz[0] < sz[1] else sz[1]  # Use the smaller dimension
-                
-                # Use transformer-style normalization: sqrt(1/output_dim)
-                # This gives std ≈ 0.125 for 64-dim, which is reasonable
-                norm_factor = (1.0 / max(output_dim, 1.0)) ** 0.5
-                p = p * norm_factor
-                
-                # Apply scaling factor (default 10.0 should give std ≈ 1.25, which is good)
-                # For std = 0.02 target, we'd need scaling ≈ 0.16, but we want larger weights
-                if hasattr(self, 'lm_scale_factor') and self.lm_scale_factor != 1.0:
-                    p = p * self.lm_scale_factor
-                else:
-                    # Default: scale by output_dim to get reasonable magnitude
-                    # This gives std ≈ 0.125 * sqrt(64) ≈ 1.0 for 64-dim
-                    p = p * (output_dim ** 0.5)
-            else:
-                # For non-LM parameters, use standard fan-in normalization
-                # fan-out:
-                # p = p * (beta / (sz[0] * p[0, 0].numel())) ** 0.5
+            # Original GHN-3 fan-in normalization (works well for all architectures)
+            # fan-out:
+            # p = p * (beta / (sz[0] * p[0, 0].numel())) ** 0.5
 
-                # fan-in:
-                p = p * (beta / p[0].numel()) ** 0.5
-                
-                # Apply reduced scaling for smaller parameters if lm_scale_factor is set
-                if hasattr(self, 'lm_scale_factor') and self.lm_scale_factor != 1.0:
-                    # For smaller parameters, apply moderate scaling
-                    input_dim = sz[1] if len(sz) >= 2 else sz[0]
-                    dim_factor = min(1.0, 100.0 / max(input_dim, 1.0))
-                    p = p * (self.lm_scale_factor * dim_factor)
+            # fan-in:
+            p = p * (beta / p[0].numel()) ** 0.5
+
+            # OPTIONAL: Very gentle rescale for embeddings only (Transformer-style std ~0.02)
+            # This is a minimal adjustment that doesn't break stability
+            if isinstance(module, nn.Embedding):
+                target_std = 0.02
+                cur_std = p.std()
+                if cur_std > 0:
+                    p = p * (target_std / cur_std)
 
         else:
 

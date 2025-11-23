@@ -65,6 +65,11 @@ def main():
     ghn2 = parsed_args.ghn2
 
     ddp = setup_ddp()
+    # debug=0: Fast training (default)
+    # debug=1: Basic parameter prediction info
+    # debug=2: Warnings about parameter mismatches
+    # debug=3: Full parameter statistics (min/max/mean/std/norm for each parameter) - VERY VERBOSE, use only for debugging
+    # Note: To enable debug_level > 2, you can override this or use --debug flag if supported
     args = init_config(mode='train_ghn', parser=parser, verbose=ddp.rank == 0,
                        debug=0,   # to avoid extra sanity checks and make training faster
                        shape_multiplier=2 if ghn2 else 1)  # max_shape default setting (can be overriden by --max_shape)
@@ -140,14 +145,14 @@ def main():
               'decoder': args.decoder, 'weight_norm': True, 've': args.virtual_edges > 1,  # Force weight_norm=True for language models
               'layernorm': args.ln, 'hid': hid, 'layers': args.layers, 'heads': args.heads, 'is_ghn2': ghn2,
               'exclude_embeddings': not args.include_embeddings, 'max_shape': args.max_shape,
-              'lm_scale_factor': 10.0}  # Increased from 1.0 to 10.0 - training showed random predictions (perplexity=22032) with 1.0
+              'lm_scale_factor': 1.0}  # Not used - using original GHN-3 normalization with gentle embedding rescale
 
     ghn = GHN3(**config, debug_level=args.debug)
     
     # Log the actual weight_norm value being used (may differ from args.weight_norm)
     if ddp.rank == 0:
         log(f'GHN created with weight_norm={ghn.weight_norm} (forced to True for language models)')
-        log(f'GHN created with lm_scale_factor={ghn.lm_scale_factor}')
+        log(f'Using original GHN-3 normalization with gentle embedding rescale (std=0.02)')
     
     # Save config metadata to experiment directory
     if ddp.rank == 0:
@@ -164,7 +169,7 @@ def main():
             'is_ghn2': ghn2,
             'exclude_embeddings': not args.include_embeddings,
             'max_shape': args.max_shape,
-            'lm_scale_factor': 10.0  # Increased from 1.0 to 10.0 - training showed random predictions with 1.0
+            'normalization': 'original_ghn3_with_embedding_rescale_0.02'  # Using original GHN-3 fan-in normalization with gentle embedding rescale
         }
         
         training_config = {
@@ -225,7 +230,7 @@ def main():
                       amp=args.amp,
                       amp_min_scale=1024,       # this helped stabilize AMP training
                       amp_growth_interval=100,  # this helped stabilize AMP training
-                      predparam_wd=0 if ghn2 else 1e-5,  # Reduced parameter regularization
+                      predparam_wd=0,  # Turned off predicted-parameter regularization at first
                       label_smoothing=0.0,  # No label smoothing for language models
                       save_dir=args.save,
                       ckpt=args.ckpt,
@@ -239,6 +244,9 @@ def main():
     # Efficiency recommendation: Use ghn3.ops as base classes during training
     log('Note: For efficiency, it is recommended to use ghn3.ops as base classes during training the GHN')
     log('Note: Perplexity overflow protection implemented - loss clamped to max 10.0 to prevent exp() overflow')
+    log('Note: Using original GHN-3 normalization with gentle embedding rescale (std=0.02)')
+    log('Note: Loss is NOT clamped before backward() - only perplexity calculation uses clamping for overflow protection')
+    log('Note: Meta-learning may need several epochs to show progress - monitor loss curve over 5+ epochs before concluding it is stuck')
     log('Note: Additional stability fixes: reduced grad_clip, reduced predparam_wd, improved AMP settings')
     
     # Initialize iterators
@@ -277,6 +285,9 @@ def main():
             # Update trainer with language model data
             trainer.update_lm(input_ids, labels, graphs=graph_batch, models=models)
             
+            # Step the scheduler after each batch (only for step-based schedulers like cosine-warmup)
+            trainer.scheduler_step()
+            
             # Explicit cleanup: Models are created lazily and should be freed after use
             # Python's garbage collector will handle this, but explicit cleanup helps with memory
             del models, graph_batch
@@ -292,7 +303,13 @@ def main():
                 
                 # Log loss and perplexity
                 tensorboard_writer.add_scalar('Train/Loss', metrics.get('loss', 0), step)
-                tensorboard_writer.add_scalar('Train/Perplexity', metrics.get('top1', 0), step)  # top1 stores perplexity for LM
+                if 'perplexity' in metrics:
+                    ppl = metrics['perplexity']
+                    # Handle inf perplexity
+                    if ppl == float('inf'):
+                        tensorboard_writer.add_scalar('Train/Perplexity', 22032.0, step)  # Use clamped max for visualization
+                    else:
+                        tensorboard_writer.add_scalar('Train/Perplexity', ppl, step)
                 
                 if 'loss_predwd' in metrics:
                     tensorboard_writer.add_scalar('Train/Loss_PredWD', metrics['loss_predwd'], step)
@@ -308,7 +325,16 @@ def main():
                 
                 # Save best model based on loss
                 current_loss = trainer.metrics['loss'].avg
-                current_perplexity = trainer.metrics['top1'].avg  # top1 stores perplexity for LM
+                perplexity_meter = trainer.metrics.get('perplexity')
+                if perplexity_meter is None:
+                    current_perplexity = float('inf')
+                else:
+                    current_perplexity = perplexity_meter.avg
+                
+                if current_perplexity == float('inf'):
+                    current_perplexity_display = 'inf'
+                else:
+                    current_perplexity_display = f'{current_perplexity:.4f}'
                 
                 if current_loss < best_loss:
                     best_loss = current_loss
@@ -320,18 +346,26 @@ def main():
                         'epoch': epoch,
                         'step': step,
                         'loss': current_loss,
-                        'perplexity': current_perplexity,
+                        'perplexity': current_perplexity if current_perplexity != float('inf') else 22032.0,
                         'args': args,
                         'config': config
                     }, best_model_path)
-                    log(f'New best model saved with loss: {current_loss:.4f}, perplexity: {current_perplexity:.4f}')
+                    log(f'New best model saved with loss: {current_loss:.4f}, perplexity: {current_perplexity_display}')
         
         # Log epoch-level metrics to TensorBoard
         if tensorboard_writer is not None:
             epoch_metrics = {metric: value.avg for metric, value in trainer.metrics.items()}
             tensorboard_writer.add_scalar('Epoch/Loss', epoch_metrics.get('loss', 0), epoch)
-            tensorboard_writer.add_scalar('Epoch/Perplexity', epoch_metrics.get('top1', 0), epoch)
+            if 'perplexity' in epoch_metrics:
+                ppl = epoch_metrics['perplexity']
+                if ppl == float('inf'):
+                    tensorboard_writer.add_scalar('Epoch/Perplexity', 22032.0, epoch)  # Use clamped max for visualization
+                else:
+                    tensorboard_writer.add_scalar('Epoch/Perplexity', ppl, epoch)
             tensorboard_writer.add_scalar('Epoch/LR', trainer.get_lr(), epoch)
+        
+        # Step the scheduler after each epoch (only for epoch-based schedulers like cosine, step, mstep)
+        trainer.scheduler_step_epoch()
     
     log('done at {}!'.format(time.strftime('%Y%m%d-%H%M%S')))
     

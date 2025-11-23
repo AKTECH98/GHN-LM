@@ -24,7 +24,7 @@ from torch.optim.lr_scheduler import StepLR, MultiStepLR, CosineAnnealingLR, Lam
 from ppuda.utils import AvgrageMeter, accuracy, capacity, init
 from ppuda.ghn.nn import GHN
 from .utils import Logger, print_grads, log
-from .ddp_utils import is_ddp, get_ddp_rank, avg_ddp_metric
+from .ddp_utils import is_ddp, get_ddp_rank, avg_ddp_metric, sync_amp_scaler
 from .nn import from_pretrained
 from .ops import Network
 
@@ -148,8 +148,8 @@ class Trainer:
             # This prevents "unused parameters" errors in DDP when some parameters don't receive gradients
             # Use static_graph=True because the GHN decoder structure is static across iterations,
             # even though the same decoder parameters are reused for multiple models in the same batch
-            model = DDP(model, device_ids=[self.rank], output_device=self.rank, 
-                       find_unused_parameters=True, static_graph=True)
+            model = DDP(model, device_ids=[self.rank], output_device=self.rank,
+                        find_unused_parameters=True, static_graph=True)
 
         if compile_mode not in [None, 'none', False]:
             try:
@@ -167,7 +167,12 @@ class Trainer:
         self._step = 0
         if epoch > self.start_epoch:
             self.start_step = 0
-        self.metrics = {'loss': AvgrageMeter(), 'top1': AvgrageMeter(), 'top5': AvgrageMeter()}
+        self.metrics = {
+            'loss': AvgrageMeter(),
+            'top1': AvgrageMeter(),
+            'top5': AvgrageMeter(),
+            'perplexity': AvgrageMeter()
+        }
         if self.predparam_wd > 0:
             self.metrics['loss_predwd'] = AvgrageMeter()  # predicted parameter regularization loss
         self.logger = Logger(self.n_batches, start_step=self.start_step)
@@ -192,12 +197,21 @@ class Trainer:
         self._optimizer = optimizer(self._model.parameters(), **opt_args)
 
         if scheduler.startswith('cosine-warmup'):
+            # Step-based scheduler: needs to be stepped after each batch
+            self._scheduler_step_based = True
 
             def parse_arg(arg, default):
                 p = scheduler.find(arg)
                 if p > 0:
-                    p_end = scheduler[p:].find('-')
-                    return float(scheduler[p + len(arg):len(scheduler) if p_end == -1 else p + p_end])
+                    start_pos = p + len(arg)
+                    # Look for the next argument name (steps or init_lr) or end of string
+                    # This handles scientific notation like 1e-4 correctly
+                    next_steps = scheduler.find('-steps', start_pos)
+                    next_init_lr = scheduler.find('-init_lr', start_pos)
+                    # Find the earliest next argument or use end of string
+                    next_args = [pos for pos in [next_steps, next_init_lr] if pos > 0]
+                    end_pos = min(next_args) if next_args else len(scheduler)
+                    return float(scheduler[start_pos:end_pos])
                 else:
                     return default
 
@@ -215,10 +229,16 @@ class Trainer:
             self._scheduler = LambdaLR(self._optimizer, lr_lambda=lr_lambda)
 
         elif scheduler == 'cosine':
+            # Epoch-based scheduler: should be stepped after each epoch
+            self._scheduler_step_based = False
             self._scheduler = CosineAnnealingLR(self._optimizer, self.epochs)
         elif scheduler == 'step':
+            # Epoch-based scheduler: should be stepped after each epoch
+            self._scheduler_step_based = False
             self._scheduler = StepLR(self._optimizer, **scheduler_args)
         elif scheduler == 'mstep':
+            # Epoch-based scheduler: should be stepped after each epoch
+            self._scheduler_step_based = False
             self._scheduler = MultiStepLR(self._optimizer, **scheduler_args)
             # e.g. GHN-2 scheduler_args={'milestones'=[200, 250], 'gamma'=0.1}
         else:
@@ -230,8 +250,15 @@ class Trainer:
             self._optimizer.load_state_dict(state_dict['optimizer'])
 
         # if training is resumed, adjust the learning rate
-        if self.start_epoch > 0:
-            self._scheduler.step(self.start_epoch)
+        if self.start_epoch > 0 or self.start_step > 0:
+            if self._scheduler_step_based:
+                # For step-based schedulers, step to the total step count
+                total_steps = self.start_epoch * self.n_batches + self.start_step
+                for _ in range(total_steps):
+                    self._scheduler.step()
+            else:
+                # For epoch-based schedulers, step to the epoch
+                self._scheduler.step(self.start_epoch)
 
         if self.amp:
             self.skipped_updates = 0
@@ -250,7 +277,14 @@ class Trainer:
             return param_group['lr']
 
     def scheduler_step(self):
-        self._scheduler.step()
+        """Step the scheduler after each batch. Only works for step-based schedulers (e.g., cosine-warmup)."""
+        if self._scheduler_step_based:
+            self._scheduler.step()
+    
+    def scheduler_step_epoch(self):
+        """Step the scheduler after each epoch. Only works for epoch-based schedulers (e.g., cosine, step, mstep)."""
+        if not self._scheduler_step_based:
+            self._scheduler.step()
 
     def update(self, images, targets, graphs=None):
 
@@ -388,6 +422,11 @@ class Trainer:
 
                 # Updates the scale for next iteration
                 self.scaler.update()
+                
+                # CRITICAL: Synchronize AMP scaler state across all DDP processes
+                # This prevents NaN gradients caused by mismatched scaler states
+                if self.ddp:
+                    sync_amp_scaler(self.scaler)
 
                 if self.amp_min_scale is not None:
                     # if the scale is too small then training is hindered, so we manually keep the scale large enough
@@ -432,7 +471,7 @@ class Trainer:
         Update method specifically for language model training.
         """
         import torch.nn.functional as F
-        
+
         def loss_check(loss_):
             if self.ddp:
                 loss_avg_ = avg_ddp_metric(loss_)
@@ -467,12 +506,13 @@ class Trainer:
                 if self._is_ghn:
                     # Predict parameters for language models
                     if models is not None:
-                        predicted_models = self._model(models,
-                                                     graphs.to_device(self.device),
-                                                     bn_track_running_stats=True,
-                                                     keep_grads=True,
-                                                     reduce_graph=False  # Must be False for language models (all params needed)
-                                                     )
+                        predicted_models = self._model(
+                            models,
+                            graphs.to_device(self.device),
+                            bn_track_running_stats=True,
+                            keep_grads=True,
+                            reduce_graph=False  # Must be False for language models (all params needed)
+                        )
                     else:
                         # Fallback to original behavior
                         if hasattr(graphs, 'nets') and len(graphs.nets) > 0:
@@ -483,13 +523,14 @@ class Trainer:
                             for nets_args in graphs.net_args:
                                 predicted_models.append(Network(**nets_args))
 
-                        predicted_models = self._model(predicted_models,
-                                                     graphs.to_device(self.device),
-                                                     bn_track_running_stats=True,
-                                                     keep_grads=True,
-                                                     reduce_graph=False  # Must be False for language models (all params needed)
-                                                     )
-                    
+                        predicted_models = self._model(
+                            predicted_models,
+                            graphs.to_device(self.device),
+                            bn_track_running_stats=True,
+                            keep_grads=True,
+                            reduce_graph=False  # Must be False for language models (all params needed)
+                        )
+
                     if self.predparam_wd > 0:
                         total_norm = 0
                         for m in predicted_models:
@@ -516,12 +557,14 @@ class Trainer:
                             logits_model = output[0]  # Extract logits
                         else:
                             logits_model = output
-                        
+
                         # Language modeling loss (next token prediction)
-                        model_loss = F.cross_entropy(logits_model.view(-1, logits_model.size(-1)), 
-                                                   labels.view(-1), 
-                                                   ignore_index=-100)
-                        
+                        model_loss = F.cross_entropy(
+                            logits_model.view(-1, logits_model.size(-1)),
+                            labels.view(-1),
+                            ignore_index=-100
+                        )
+
                         # Check for NaN loss (edge case: all labels are -100)
                         if torch.isnan(model_loss):
                             log(f"Warning: NaN loss detected at step {self._step} for model {type(model).__name__}")
@@ -529,9 +572,22 @@ class Trainer:
                             log(f"  Total targets: {labels.numel()}")
                             # Skip this model's loss contribution
                             continue
-                        
+
                         loss += model_loss
                         logits.append(logits_model.detach())
+
+                        # Diagnostic logging for logits (every 100 batches)
+                        if self._step % 100 == 0 and len(logits) == 1:  # Only log once per step
+                            with torch.no_grad():
+                                logits_stats = logits_model.detach()
+                                log(
+                                    f"DEBUG: Logits stats at step {self._step}: "
+                                    f"mean={logits_stats.mean().item():.6f}, "
+                                    f"std={logits_stats.std().item():.6f}, "
+                                    f"min={logits_stats.min().item():.4f}, "
+                                    f"max={logits_stats.max().item():.4f}"
+                                )
+
                         # Clear intermediate tensors to save memory
                         del logits_model
                     except Exception as e:
@@ -547,47 +603,37 @@ class Trainer:
                     log(f"Warning: All models produced NaN loss at step {self._step}")
                     log(f"  Skipping this batch")
                     return None
-                
-                # Note: Don't delete predicted_models here - they're needed for backward pass
-                # They will be cleaned up by Python's GC after backward pass
 
             if loss_predwd is not None:
                 loss += loss_predwd
 
             # Debug: Check gradient connection
             if self._step == 0 and self.amp and self._is_ghn:
-                # Parameters are leaf nodes, so they won't have grad_fn
-                # But we can check if the predicted tensors (before assignment) would have grad_fn
-                # The key is that when keep_grads=True, the tensors assigned should maintain connection
                 log(f"DEBUG: Checking predicted models parameter connection...")
-                # Check if any predicted model parameters require grad
                 pred_params_require_grad = []
                 for m in predicted_models:
                     for p in m.parameters():
                         if p.requires_grad:
                             pred_params_require_grad.append(p)
                 log(f"DEBUG: Predicted models params requiring grad: {len(pred_params_require_grad)}")
-                # Check if GHN parameters require grad
                 ghn_params_require_grad = [p for p in self._model.parameters() if p.requires_grad]
                 log(f"DEBUG: GHN params requiring grad: {len(ghn_params_require_grad)}")
-                # The issue is that predicted params have gradients but don't flow to GHN
-                # This suggests the computation graph connection is broken
 
-            # Note: Don't delete predicted_models here - they're needed for backward pass
-            # Store reference for debugging
             _predicted_models_for_debug = predicted_models if self._is_ghn else None
 
-            # Debug: Check if loss is connected to computation graph
             if self.amp:
-                if loss.requires_grad == False:
-                    raise RuntimeError(f"Loss does not require gradients! This will cause AMP scaler error. "
-                                     f"Loss type: {type(loss)}, requires_grad: {loss.requires_grad}, "
-                                     f"loss.grad_fn: {loss.grad_fn}")
-                # Check if loss is connected to model parameters
+                if loss.requires_grad is False:
+                    raise RuntimeError(
+                        f"Loss does not require gradients! This will cause AMP scaler error. "
+                        f"Loss type: {type(loss)}, requires_grad: {loss.requires_grad}, "
+                        f"loss.grad_fn: {loss.grad_fn}"
+                    )
                 if loss.grad_fn is None:
-                    log(f"WARNING: Loss has requires_grad=True but grad_fn is None! This suggests the graph is broken.")
+                    log(
+                        f"WARNING: Loss has requires_grad=True but grad_fn is None! "
+                        f"This suggests the graph is broken."
+                    )
                     log(f"  Loss dtype: {loss.dtype}, device: {loss.device}")
-                    # Try to find if any model parameters require grad
                     model_requires_grad = any(p.requires_grad for p in self._model.parameters())
                     log(f"  Model has parameters requiring grad: {model_requires_grad}")
                     if not model_requires_grad:
@@ -602,8 +648,10 @@ class Trainer:
                 else:
                     net_idx = getattr(graphs, 'net_idx', 0)
                     n_graphs = len(graphs) if hasattr(graphs, '__len__') else 1
-                print(f'DDP: step {self._step}, rank {self.rank}, {n_graphs} graphs, '
-                      f'net_idx {net_idx}, loss {loss}, loss_avg {loss_avg}')
+                print(
+                    f'DDP: step {self._step}, rank {self.rank}, {n_graphs} graphs, '
+                    f'net_idx {net_idx}, loss {loss}, loss_avg {loss_avg}'
+                )
 
             if isinstance(loss_avg, str):  # nan loss in any worker -> exit
                 return loss_avg
@@ -612,43 +660,58 @@ class Trainer:
             if len(logits) > 0 and isinstance(logits[0], torch.Tensor):
                 logits_stack = torch.stack(logits)
                 del logits
-                logits = [logits_stack]  # Keep for metrics calculation
+                logits = [logits_stack]
             else:
                 logits = []
 
             if self.amp:
-                # Scales the loss, and calls backward()
-                # to create scaled gradients
                 self.scaler.scale(loss).backward()
 
-                # Debug: Check if gradients were computed for model parameters
                 if self._step == 0:
                     model_params_with_grad = [p for p in self._model.parameters() if p.grad is not None]
                     optimizer_params = []
                     for group in self._optimizer.param_groups:
                         optimizer_params.extend(group['params'])
                     optimizer_params_with_grad = [p for p in optimizer_params if p.grad is not None]
-                    log(f"DEBUG: After backward - Model params with grad: {len(model_params_with_grad)}/{sum(1 for _ in self._model.parameters())}")
-                    log(f"DEBUG: Optimizer params with grad: {len(optimizer_params_with_grad)}/{len(optimizer_params)}")
+                    log(
+                        f"DEBUG: After backward - Model params with grad: "
+                        f"{len(model_params_with_grad)}/{sum(1 for _ in self._model.parameters())}"
+                    )
+                    log(
+                        f"DEBUG: Optimizer params with grad: "
+                        f"{len(optimizer_params_with_grad)}/{len(optimizer_params)}"
+                    )
                     if len(optimizer_params_with_grad) == 0:
                         log("ERROR: No gradients computed for optimizer parameters!")
-                        log(f"  Loss requires_grad: {loss.requires_grad}, grad_fn: {loss.grad_fn}")
-                        # Check if predicted_models have gradients
+                        log(
+                            f"  Loss requires_grad: {loss.requires_grad}, "
+                            f"grad_fn: {loss.grad_fn}"
+                        )
                         if _predicted_models_for_debug is not None:
                             if isinstance(_predicted_models_for_debug, (list, tuple)):
                                 pred_params_with_grad = []
                                 for m in _predicted_models_for_debug:
-                                    pred_params_with_grad.extend([p for p in m.parameters() if p.grad is not None])
-                                log(f"  Predicted models params with grad: {len(pred_params_with_grad)}")
+                                    pred_params_with_grad.extend(
+                                        [p for p in m.parameters() if p.grad is not None]
+                                    )
+                                log(
+                                    f"  Predicted models params with grad: "
+                                    f"{len(pred_params_with_grad)}"
+                                )
                             else:
-                                pred_params_with_grad = [p for p in _predicted_models_for_debug.parameters() if p.grad is not None]
-                                log(f"  Predicted model params with grad: {len(pred_params_with_grad)}")
+                                pred_params_with_grad = [
+                                    p for p in _predicted_models_for_debug.parameters()
+                                    if p.grad is not None
+                                ]
+                                log(
+                                    f"  Predicted model params with grad: "
+                                    f"{len(pred_params_with_grad)}"
+                                )
 
-                # Unscales the gradients of optimizer's assigned params in-place
                 self.scaler.unscale_(self._optimizer)
             else:
                 loss.backward()
-            
+
             # Clear memory after backward pass
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -665,72 +728,76 @@ class Trainer:
                 total_norm_clip = torch.zeros(1, device=self.rank)
 
             if self.amp:
-                # Unscales gradients and calls
-                # or skips optimizer.step()
                 retval = self.scaler.step(self._optimizer)
 
-                if retval is None and torch.logical_or(total_norm_clip.isnan(), total_norm_clip.isinf()):
+                if retval is None and torch.logical_or(
+                    total_norm_clip.isnan(), total_norm_clip.isinf()
+                ):
                     self.skipped_updates += 1
 
-                # Updates the scale for next iteration
                 self.scaler.update()
+                
+                # CRITICAL: Synchronize AMP scaler state across all DDP processes
+                # This prevents NaN gradients caused by mismatched scaler states
+                if self.ddp:
+                    sync_amp_scaler(self.scaler)
 
                 if self.amp_min_scale is not None:
-                    # if the scale is too small then training is hindered, so we manually keep the scale large enough
                     scale = self.scaler._check_scale_growth_tracker('update')[0]
                     if scale < self.amp_min_scale:
                         self.scaler._scale = torch.tensor(self.amp_min_scale).to(scale)
             else:
                 self._optimizer.step()
 
-            # Update training metrics (for language models, we use perplexity instead of accuracy)
-            if len(logits) > 0:
-                # Calculate perplexity as a metric with overflow protection
-                # logits is already a list with one stacked tensor from memory optimization above
-                if isinstance(logits[0], torch.Tensor) and logits[0].dim() > 2:
-                    avg_logits = logits[0].mean(0)  # Average logits across models
-                else:
-                    avg_logits = torch.stack(logits).mean(0)  # Fallback if structure is different
-                cross_entropy_loss = F.cross_entropy(avg_logits.view(-1, avg_logits.size(-1)), 
-                                                    labels.view(-1), 
-                                                    ignore_index=-100)
-                # Clamp loss to prevent overflow in perplexity calculation
-                clamped_loss = torch.clamp(cross_entropy_loss, max=10.0)  # exp(10) ≈ 22,026
-                perplexity = torch.exp(clamped_loss)
-                
-                n = len(labels.view(-1))
-                self.metrics['loss'].update((loss_avg if self.ddp else loss).item(), n)
-                if loss_predwd is not None:
-                    self.metrics['loss_predwd'].update((avg_ddp_metric(loss_predwd) if self.ddp else loss_predwd).item(), n)
-                # Store perplexity in top1 metric for language models
-                self.metrics['top1'].update((avg_ddp_metric(perplexity) if self.ddp else perplexity).item(), n)
-                # Keep top5 for compatibility (set to same as top1)
-                self.metrics['top5'].update((avg_ddp_metric(perplexity) if self.ddp else perplexity).item(), n)
-                
-                # Clear logits after metrics calculation
-                del avg_logits, cross_entropy_loss, clamped_loss, perplexity
+            # Update training metrics (for language models)
+            n = len(labels.view(-1)) if labels is not None else 1
+            actual_loss = (loss_avg if self.ddp else loss).item()
+            self.metrics['loss'].update(actual_loss, n)
+
+            if loss_predwd is not None:
+                self.metrics['loss_predwd'].update(
+                    (avg_ddp_metric(loss_predwd) if self.ddp else loss_predwd).item(),
+                    n
+                )
+
+            # Perplexity from actual loss for logging only.
+            # Cross-entropy losses for LMs are typically nowhere near overflow, so this is safe.
+            try:
+                perplexity = math.exp(actual_loss)
+            except OverflowError:
+                perplexity = float('inf')
+
+            self.metrics['perplexity'].update(perplexity, n)
+
+            # Clear logits after metrics calculation (if they exist)
+            if 'logits' in locals() and len(logits) > 0:
+                del logits
 
             self._step += 1
 
         except RuntimeError as err:
-            # Check if it's an OOM error
             if 'out of memory' in str(err).lower() or 'cuda' in str(err).lower():
                 print(f'OOM error on rank {self.rank}, step {self._step}')
-                # Clear cache to potentially recover
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-            
-            print('error', 'rank ', self.rank, type(err), err, getattr(graphs, 'net_args', '') if graphs is not None else '')
+
+            print(
+                'error',
+                'rank ',
+                self.rank,
+                type(err),
+                err,
+                getattr(graphs, 'net_args', '') if graphs is not None else ''
+            )
             loss = nan_loss
 
-            import traceback
             print(traceback.format_exc())
             print(traceback.print_exc())
             if not self.ddp:
                 raise
 
         loss_avg = loss_check(loss)
-        if isinstance(loss_avg, str):  # oom in any worker -> exit
+        if isinstance(loss_avg, str):  # oom or nan in any worker -> exit
             raise RuntimeError(loss_avg)
 
         return self.metrics
@@ -741,12 +808,13 @@ class Trainer:
         if not ((((step + 1) % save_freq == 0) or step == self.n_batches - 1) and self.rank == 0):
             return
 
-        state_dict = {'state_dict': (self._model.module if hasattr(self._model, 'module')
-                                     else self._model).state_dict(),
-                      'optimizer': self._optimizer.state_dict(),
-                      'epoch': epoch,
-                      'step': step
-                      }
+        state_dict = {
+            'state_dict': (self._model.module if hasattr(self._model, 'module')
+                           else self._model).state_dict(),
+            'optimizer': self._optimizer.state_dict(),
+            'epoch': epoch,
+            'step': step
+        }
         state_dict.update(config)
         torch.save(state_dict, self.checkpoint_path)
         log('\nsaved the checkpoint to {} at epoch={}, step={}'.format(self.checkpoint_path, epoch, step))
@@ -759,7 +827,9 @@ class Trainer:
     def log(self, step=None):
         step_ = self._step if step is None else (step + 1)
         if step_ % self.log_interval == 0 or step_ >= self.n_batches - 1 or step_ == 1:
-            metrics = {metric: value.avg for metric, value in self.metrics.items()}
+            metrics = {metric: value.avg for metric, value in self.metrics.items() 
+                      if metric not in ['top1', 'top5']}
             if self.amp:
                 metrics['amp_scale'] = self.scaler._check_scale_growth_tracker('update')[0].item()
+            metrics['lr'] = self.get_lr()
             self.logger(step_, metrics)

@@ -1,8 +1,8 @@
 #!/bin/bash -l
-#SBATCH --job-name=Benchmark_20_mini_gpt_xl_transformers
+#SBATCH --job-name=BenchmarkXavier_20_mini_gpt_xl_transformers
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
-#SBATCH --comment="Language Model Training"
+#SBATCH --comment="Language Model Training with Xavier Initialization"
 #SBATCH --mail-user=slack:@ak3748       # Slack username to notify
 #SBATCH --mail-type=BEGIN,END
 #SBATCH --gres=gpu:a100:1
@@ -33,14 +33,14 @@ LOG_FILE="$LOG_DIR/${JOB_TAG}.log"
 exec > >(tee -a "$OUT_FILE" | tee -a "$LOG_FILE")
 exec 2> >(tee -a "$ERR_FILE" | tee -a "$LOG_FILE" >&2)
 
-echo "Starting Language Model Training"
-echo "================================"
+echo "Starting Language Model Training with Xavier Initialization"
+echo "==========================================================="
 echo "Job ID: $JOB_ID"
 echo "Node: $NODE"
 echo "Time: $(date)"
 echo "DIR:$(dirname "$0")"
 echo "Working Directory: $(pwd)"
-echo "================================"
+echo "==========================================================="
 
 # module load cuda/11.7
 
@@ -61,26 +61,16 @@ CONFIG_FILE="LM/configs/benchmark_20_mini_gpt_xl_transformers.yaml"  # Change to
 # TRAINING COMMAND
 # ===========================================
 
-# Initialization method (default, he, xavier, or ghn)
-INIT_METHOD=${INIT_METHOD:-default}
-GHN_CHECKPOINT=${GHN_CHECKPOINT:-}
+# Set initialization method to Xavier
+INIT_METHOD=xavier
 
 # Check if config file exists
 if [ -f "$CONFIG_FILE" ]; then
     echo "Using config file: $CONFIG_FILE"
-    echo "Initialization method: $INIT_METHOD"
-    echo "================================"
+    echo "Initialization method: Xavier (Glorot)"
+    echo "==========================================================="
     
-    # Build command based on init method
-    if [ "$INIT_METHOD" = "ghn" ]; then
-        if [ -z "$GHN_CHECKPOINT" ]; then
-            echo "❌ Error: GHN_CHECKPOINT must be set when INIT_METHOD=ghn"
-            exit 1
-        fi
-        python train_lm.py --config "$CONFIG_FILE" --init_method "$INIT_METHOD" --ghn_checkpoint "$GHN_CHECKPOINT"
-    else
-        python train_lm.py --config "$CONFIG_FILE" --init_method "$INIT_METHOD"
-    fi
+    python train_lm.py --config "$CONFIG_FILE" --init_method "$INIT_METHOD"
     
 else
     echo "❌ Error: Config file not found: $CONFIG_FILE"
@@ -92,3 +82,4 @@ else
 fi
 
 echo "Job finished at $(date)"
+

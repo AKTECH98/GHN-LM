@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=GHN-D-MultiGPU
+#SBATCH --job-name=GHN-GPT-0.4B-64-MultiGPU-Warmup-AMP
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
 #SBATCH --comment="GHN-3 Language Model Training with Multiple GPUs (DDP)"
@@ -20,31 +20,27 @@
 NUM_GPUS=${SLURM_GPUS:-2}  # Default to 4, or use SLURM_GPUS if set
 
 # Training configuration
-MODEL_NAME="GHN-D-MultiGPU"
+MODEL_NAME="GHN-GPT-0.4B-32-8-MultiGPU-Warmup-AMP"
 HEADS=2
 LAYERS=3
 SEQ_LEN=64
 INTERM_EPOCH=5
 EPOCHS=75
-BATCH_SIZE=64              # WikiText-2 batch size per GPU
-META_BATCH_SIZE=2        # Total models across all GPUs (will be split evenly, 4 per GPU)
-LR=0.0004
-WD=0.01
+BATCH_SIZE=24              # WikiText-2 batch size per GPU (reduced from 32 to account for DDP overhead)
+META_BATCH_SIZE=6           # Total models across all GPUs (3 per GPU, reduced from 4 to account for DDP overhead)
+LR=0.01
+WD=0.0005
 OPTIMIZER="adam"
-SCHEDULER="cosine"
-LOG_INTERVAL=50
+SCHEDULER="cosine-warmup-steps1000-init_lr0.003"  # Match single-GPU config for proper cosine decay
+LOG_INTERVAL=100
 NUM_WORKERS=1
 HID=32
 HYPERNET="gatedgnn"
 DECODER="conv"
-MAX_SHAPE="1024,1024,1,1"  # Reduced from 1024,1024,1,1 to save memory
+MAX_SHAPE="1024,1024,1,1"
 
-# Model filtering (for ~100K models)
-EXCLUDE_OSS=true         # Exclude OSS models
 INCLUDE_EMBEDDINGS=true  # Set to true to include embeddings (uses more memory)
-MAX_D_MODEL=1024         # Maximum d_model for GPT Encoder/Mini GPT variants (~100K models)
-MAX_LAYERS=16            # Maximum layers for GPT Encoder/Mini GPT variants (~100K models)
-MAX_PARAMS=3.5           # Maximum model size in billions (e.g., 3.5 for 3.5B parameters). Recommended: 3.5 for 40GB GPU to avoid OOM
+MAX_PARAMS=0.4           # Maximum model size in billions (e.g., 3.5 for 3.5B parameters). Recommended: 3.5 for 40GB GPU to avoid OOM
 
 # =============================================================================
 # Job Setup
@@ -103,6 +99,8 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # Calculate effective batch sizes
 # With N GPUs, meta_batch_size is split across GPUs
 # Each GPU gets meta_batch_size // NUM_GPUS models
+# NOTE: DDP adds memory overhead (gradient buffers, communication buffers, find_unused_parameters tracking)
+#       Therefore, per-GPU batch sizes are slightly reduced compared to single-GPU training
 MODELS_PER_GPU=$((META_BATCH_SIZE / NUM_GPUS))
 TOTAL_EFFECTIVE_BATCH=$((BATCH_SIZE * NUM_GPUS))
 
@@ -114,14 +112,8 @@ echo "  - Models per GPU: $MODELS_PER_GPU"
 echo "  - WikiText-2 batch_size per GPU: $BATCH_SIZE"
 echo "  - Total effective batch: $TOTAL_EFFECTIVE_BATCH"
 echo "  - Max shape: $MAX_SHAPE"
-echo "  - Exclude OSS models: $EXCLUDE_OSS"
 echo "  - Include embeddings: $INCLUDE_EMBEDDINGS"
-if [ -n "$MAX_D_MODEL" ]; then
-    echo "  - Max d_model: $MAX_D_MODEL"
-fi
-if [ -n "$MAX_LAYERS" ]; then
-    echo "  - Max layers: $MAX_LAYERS"
-fi
+
 if [ -n "$MAX_PARAMS" ]; then
     echo "  - Max params: ${MAX_PARAMS}B"
 fi
@@ -156,28 +148,18 @@ TRAIN_ARGS=(
     --max_shape "$MAX_SHAPE"
 )
 
-# Add optional flags
-if [ "$EXCLUDE_OSS" = true ]; then
-    TRAIN_ARGS+=(--exclude_oss)
-fi
-
 if [ "$INCLUDE_EMBEDDINGS" = true ]; then
     TRAIN_ARGS+=(--include_embeddings)
-fi
-
-# Add GPT Encoder/Mini GPT filtering arguments
-if [ -n "$MAX_D_MODEL" ]; then
-    TRAIN_ARGS+=(--max_d_model "$MAX_D_MODEL")
-fi
-
-if [ -n "$MAX_LAYERS" ]; then
-    TRAIN_ARGS+=(--max_layers "$MAX_LAYERS")
 fi
 
 # Add max_params filtering argument
 if [ -n "$MAX_PARAMS" ]; then
     TRAIN_ARGS+=(--max_params "$MAX_PARAMS")
 fi
+
+# Enable AMP (Automatic Mixed Precision) for better training stability and speed
+# This matches the single-GPU training configuration
+TRAIN_ARGS+=(--amp)
 
 # Run GHN-3 training with torchrun for multi-GPU DDP
 # torchrun automatically sets up DDP with environment variables
