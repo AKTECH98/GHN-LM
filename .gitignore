@@ -30,6 +30,7 @@ runs/
 *.log
 Experiment/
 logging/
+tensor_log/
 start_tensorboard.sh
 
 # Virtual environment
@@ -41,3 +42,5 @@ Report/
 Evaluations/
 GHN_Models/
 ckpts/
+OLDExperiment/
+OLDtensor_log/
