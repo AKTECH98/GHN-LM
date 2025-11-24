@@ -136,6 +136,8 @@ class GHN3(GHN):
     Inherited from the GHN class (https://github.com/facebookresearch/ppuda/blob/main/ppuda/ghn/nn.py).
     But most of the functions are overridden to support GHN-3 and improve code.
     """
+    
+    _efficiency_warning_shown = False  # Class variable to track if warning has been shown
 
     def __init__(self, max_shape, num_classes, hid, heads=8, layers=3, is_ghn2=False, pretrained=False, exclude_embeddings=True, **kwargs):
 
@@ -233,11 +235,13 @@ class GHN3(GHN):
 
         debug_info = self._init_debug_info(nets_torch, graphs)
 
-        if self.debug_level <= 0 and self.training and len(nets_torch) > 1:
+        if self.debug_level <= 0 and self.training and len(nets_torch) > 1 and not GHN3._efficiency_warning_shown:
             for net in nets_torch:
                 if isinstance(net, nn.Module):
                     log('WARNING: for efficiency, it is recommended to '
                         'use ghn3.ops as base classes during training the GHN.')
+                    GHN3._efficiency_warning_shown = True
+                    break  # Only print once
 
         # Find mapping between embeddings and network parameters
         param_groups, params_map = self._map_net_params(graphs,
@@ -323,7 +327,7 @@ class GHN3(GHN):
                     else:
                         w_ = w[w_ind]
 
-                    sz_set = self._set_params(m, self._interpolate_params(w_, sz), is_w=is_w & ~it, keep_grads=keep_grads)
+                    sz_set = self._set_params(m, self._tile_params(w_, sz), is_w=is_w & ~it, keep_grads=keep_grads)
                     if debug_info is not None:
                         debug_info['n_tensors_pred'] += 1
                         debug_info['n_params_pred'] += torch.prod(torch.tensor(sz_set))
