@@ -5,9 +5,7 @@ This module provides comprehensive language model architecture datasets for trai
 Graph HyperNetworks (GHN-3) on language modeling tasks. It supports:
 
 - Custom GPT-based Transformer variants (GPT Encoder, Mini GPT)
-- HuggingFace Transformers models (GPT-2, GPT-Neo, GPT-J, Mistral, MPT, etc.)
 - Comprehensive parameter space exploration
-- Real architectural differences preserved through Transformers library
 """
 
 from typing import Dict, List, Optional
@@ -25,8 +23,7 @@ from GHN.graph import Graph, GraphBatch
 # Import the available model architectures
 from LM import (
     GPTEncoderLayerLM, GPTEncoderConfig,
-    GPTDecoderLM, MiniGPTConfig,
-    TransformersLM, TransformersConfig, OSS_MODEL_CONFIGS
+    GPTDecoderLM, MiniGPTConfig
 )
 
 
@@ -58,7 +55,7 @@ def create_model_from_config(model_type: str, config: Dict, device: str = 'cpu')
     Factory function to create different types of language models.
     
     Args:
-        model_type: Type of model ('gpt_encoder', 'mini_gpt', 'transformers')
+        model_type: Type of model ('gpt_encoder', 'mini_gpt')
         config: Model configuration dictionary
         device: Device to create model on
     
@@ -81,12 +78,9 @@ def create_model_from_config(model_type: str, config: Dict, device: str = 'cpu')
         # Transformer-based models: map parameters
         _map_transformer_params(config_copy)
         model = _create_transformer_model(model_type, config_copy)
-    elif model_type == 'transformers':
-        # HuggingFace Transformers models
-        model = _create_transformers_model(config_copy)
     else:
         raise ValueError(f"Unknown model type: {model_type}. "
-                        f"Supported types: gpt_encoder, mini_gpt, transformers")
+                        f"Supported types: gpt_encoder, mini_gpt")
     
     return model.to(device)
 
@@ -112,11 +106,6 @@ def _create_transformer_model(model_type: str, config: Dict):
         return GPTDecoderLM(MiniGPTConfig(**config))
     else:
         raise ValueError(f"Unknown Transformer model type: {model_type}")
-
-
-def _create_transformers_model(config: Dict):
-    """Create HuggingFace Transformers model."""
-    return TransformersLM(TransformersConfig(**config))
 
 
 # =============================================================================
@@ -170,34 +159,21 @@ def _create_base_config(name: str, model_type: str, d_model: int, n_layers: int,
 # =============================================================================
 
 def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024, 
-                          max_oss_d_model: Optional[int] = None,
-                          max_oss_layers: Optional[int] = None,
-                          exclude_large_oss: bool = False,
-                          exclude_oss: bool = False,
                           max_d_model: Optional[int] = None,
                           max_layers: Optional[int] = None) -> List[Dict]:
     """
     Generate comprehensive language model configurations for GHN training.
     
     Creates ALL possible combinations of model architectures with the following coverage:
-    - Model types: GPT Encoder, Mini GPT, HuggingFace Transformers
-    - Layers: 1-16 (extensive range)
+    - Model types: GPT Encoder, Mini GPT
+    - Layers: 1-20 (extensive range)
     - Dimensions: 32-2048 (comprehensive range of model sizes)
     - Attention heads: 1-32 (all valid divisors of d_model)
-    - MLP ratios: 1.0-8.0 (all reasonable feed-forward ratios)
-    - Open Source GPT models: GPT-2, GPT-Neo, GPT-J, Mistral, MPT (real architectures)
+    - MLP ratios: 1.0-8.5 (all reasonable feed-forward ratios)
     
     Args:
         vocab_size: Vocabulary size for language models
         max_len: Maximum sequence length
-        max_oss_d_model: Maximum d_model for OSS models (filters out larger models). 
-                        Default None = no limit. Suggested: 2048 for <30GB memory, 768 for <10GB
-        max_oss_layers: Maximum layers for OSS models (filters out deeper models).
-                       Default None = no limit. Suggested: 24 for <30GB memory, 12 for <10GB
-        exclude_large_oss: If True, excludes all OSS models with >1B parameters.
-                          Convenient shortcut to exclude GPT-J-6B, Mistral-7B, MPT-7B, GPT-Neo-2.7B
-        exclude_oss: If True, excludes ALL OSS models from training
-                    (only generates GPT Encoder and Mini GPT variants)
         max_d_model: Maximum d_model for GPT Encoder/Mini GPT variants (filters out larger models).
                     Default None = no limit. Suggested: 512 for <40GB memory, 768 for <80GB
         max_layers: Maximum layers for GPT Encoder/Mini GPT variants (filters out deeper models).
@@ -211,8 +187,8 @@ def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024,
     # Define parameter ranges
     d_models = [32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 480, 512, 
                 576, 640, 704, 768, 832, 896, 960, 1024, 1152, 1280, 1408, 1536, 1664, 1792, 1920, 2048]
-    layer_counts = list(range(1, 21))  # 1-20 layers (increased to reach ~130K variants)
-    mlp_ratios = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5]  # Added 8.5 to reach ~130K variants
+    layer_counts = list(range(1, 21))  # 1-20 layers
+    mlp_ratios = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5]
     
     # Filter parameter ranges based on max_d_model and max_layers
     if max_d_model is not None:
@@ -222,13 +198,6 @@ def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024,
     
     # Generate Transformer variants
     variants.extend(_generate_transformer_variants(d_models, layer_counts, mlp_ratios, max_len, vocab_size))
-    
-    # Generate Open Source GPT variants with filtering (skip if exclude_oss=True)
-    if not exclude_oss:
-        variants.extend(_generate_oss_gpt_variants(max_len, vocab_size, 
-                                                   max_d_model=max_oss_d_model,
-                                                   max_layers=max_oss_layers,
-                                                   exclude_large=exclude_large_oss))
     
     return variants
 
@@ -250,69 +219,6 @@ def _generate_transformer_variants(d_models: List[int], layer_counts: List[int],
                     
                     name = f"mini-gpt-{n_layers}L-{d_model}d-h{n_heads}-r{mlp_ratio}"
                     variants.append(_create_base_config(name, "mini_gpt", d_model, n_layers, n_heads, mlp_ratio, max_len, vocab_size))
-    
-    return variants
-
-
-def _generate_oss_gpt_variants(max_len: int, vocab_size: int,
-                               max_d_model: Optional[int] = None,
-                               max_layers: Optional[int] = None,
-                               exclude_large: bool = False) -> List[Dict]:
-    """
-    Generate Open Source GPT model variants using HuggingFace Transformers.
-    
-    Uses pre-defined configurations for popular OSS models with their actual
-    architectural differences preserved through the Transformers library.
-    
-    Supported models:
-    - GPT-2: Small, Medium, Large, XL variants
-    - GPT-Neo: 125M, 1.3B, 2.7B variants
-    - GPT-J: 6B variant
-    - Mistral: 7B variant
-    - MPT: 7B variant
-    
-    Args:
-        max_len: Maximum sequence length
-        vocab_size: Vocabulary size
-        max_d_model: Maximum d_model for filtering (None = no filter)
-        max_layers: Maximum layers for filtering (None = no filter)
-        exclude_large: If True, excludes models with >1B parameters (GPT-J, Mistral, MPT, GPT-Neo-2.7B)
-        
-    Returns:
-        List of OSS GPT model configuration dictionaries
-    """
-    variants = []
-    
-    # Models with >1B parameters (approximate)
-    large_models = {'gpt-j-6b', 'mistral-7b', 'mpt-7b', 'gpt-neo-2.7b', 'gpt2-xl'}
-    
-    # Generate variants for each OSS configuration
-    for model_name, config in OSS_MODEL_CONFIGS.items():
-        # Apply filters
-        if exclude_large and model_name in large_models:
-            continue  # Skip large models
-        
-        if max_d_model is not None and config['d_model'] > max_d_model:
-            continue  # Skip models larger than max_d_model
-        
-        if max_layers is not None and config['n_layer'] > max_layers:
-            continue  # Skip models deeper than max_layers
-        
-        # Create variant configuration
-        variant = {
-            'name': model_name,
-            'model_type': 'transformers',
-            'model_name': config['model_name'],
-            'vocab_size': vocab_size,
-            'd_model': config['d_model'],
-            'n_layers': config['n_layer'],
-            'n_heads': config['n_head'],
-            'd_ff': config['d_ff'],
-            'max_len': min(max_len, config['max_seq_len']),  # Use smaller of the two
-            'p_drop': 0.1,
-            'tie_weights': False,
-        }
-        variants.append(variant)
     
     return variants
 
@@ -341,10 +247,6 @@ class GHNLMVariantsDataset(Dataset):
     def __init__(self, vocab_size: int = 50257, max_len: int = 1024, 
                  device: Optional[str] = None, ve_cutoff: int = 50, dense: bool = True, 
                  exclude_embeddings: bool = True,
-                 max_oss_d_model: Optional[int] = None,
-                 max_oss_layers: Optional[int] = None,
-                 exclude_large_oss: bool = False,
-                 exclude_oss: bool = False,
                  max_d_model: Optional[int] = None,
                  max_layers: Optional[int] = None):
         """
@@ -356,10 +258,6 @@ class GHNLMVariantsDataset(Dataset):
             device: Device to create models on
             ve_cutoff: Virtual edge cutoff for graph construction
             dense: Whether to use dense graphs
-            max_oss_d_model: Maximum d_model for OSS models (filters large models)
-            max_oss_layers: Maximum layers for OSS models (filters deep models)
-            exclude_large_oss: If True, excludes all OSS models with >1B parameters
-            exclude_oss: If True, excludes ALL OSS models from training
             max_d_model: Maximum d_model for GPT Encoder/Mini GPT variants (filters large models)
             max_layers: Maximum layers for GPT Encoder/Mini GPT variants (filters deep models)
         """
@@ -368,10 +266,6 @@ class GHNLMVariantsDataset(Dataset):
         self.dense = dense
         self.exclude_embeddings = exclude_embeddings
         self.configs = ghn_training_variants(vocab_size=vocab_size, max_len=max_len,
-                                            max_oss_d_model=max_oss_d_model,
-                                            max_oss_layers=max_oss_layers,
-                                            exclude_large_oss=exclude_large_oss,
-                                            exclude_oss=exclude_oss,
                                             max_d_model=max_d_model,
                                             max_layers=max_layers)
 
@@ -431,10 +325,6 @@ def build_ghn_variants_dataloader(
     dense: bool = True,
     shuffle: bool = True,
     exclude_embeddings: bool = True,
-    max_oss_d_model: Optional[int] = None,
-    max_oss_layers: Optional[int] = None,
-    exclude_large_oss: bool = False,
-    exclude_oss: bool = False,
     max_d_model: Optional[int] = None,
     max_layers: Optional[int] = None,
 ):
@@ -451,14 +341,6 @@ def build_ghn_variants_dataloader(
         dense: Whether to use dense graphs
         shuffle: Whether to shuffle the dataset
         exclude_embeddings: Whether to exclude embedding layers from GHN prediction
-        max_oss_d_model: Maximum d_model for OSS models (None = no limit)
-                        Suggested: 2048 for <30GB, 768 for <10GB memory
-        max_oss_layers: Maximum layers for OSS models (None = no limit)
-                       Suggested: 24 for <30GB, 12 for <10GB memory
-        exclude_large_oss: If True, excludes all OSS models with >1B parameters
-                          (GPT-J-6B, Mistral-7B, MPT-7B, GPT-Neo-2.7B, GPT-2-XL)
-        exclude_oss: If True, excludes ALL OSS models from training
-                    (only trains on GPT Encoder and Mini GPT variants)
         max_d_model: Maximum d_model for GPT Encoder/Mini GPT variants (None = no limit)
                     Suggested: 512 for <40GB memory, 768 for <80GB
         max_layers: Maximum layers for GPT Encoder/Mini GPT variants (None = no limit)
@@ -474,10 +356,6 @@ def build_ghn_variants_dataloader(
         ve_cutoff=ve_cutoff, 
         dense=dense,
         exclude_embeddings=exclude_embeddings,
-        max_oss_d_model=max_oss_d_model,
-        max_oss_layers=max_oss_layers,
-        exclude_large_oss=exclude_large_oss,
-        exclude_oss=exclude_oss,
         max_d_model=max_d_model,
         max_layers=max_layers
     )
