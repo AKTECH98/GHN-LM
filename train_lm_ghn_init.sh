@@ -1,8 +1,8 @@
 #!/bin/bash -l
-#SBATCH --job-name=GHN_D_init_10_mini_gpt_xl
+#SBATCH --job-name=GHN_init-20-mini-gpt-xl-transformers
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
-#SBATCH --comment="GHN-3 Language Model Training with GHN Initialization"
+#SBATCH --comment="GHN-GPT Language Model Training with GHN Initialization"
 #SBATCH --mail-user=slack:@ak3748       # Slack username to notify
 #SBATCH --mail-type=BEGIN,END
 #SBATCH --gres=gpu:a100:1
@@ -39,7 +39,7 @@ echo "Node: $NODE"
 echo "Time: $(date)"
 echo "DIR: $(dirname "$0")"
 echo "Working Directory: $(pwd)"
-echo "Training Script: train_lm_ghn_init.py"
+echo "Training Script: train_lm.py (with --init_method=ghn)"
 echo "Features: GHN initialization, TensorBoard logging, Experiment tracking"
 echo "=============================================================="
 
@@ -51,15 +51,16 @@ export PYTHONPATH=$PYTHONPATH:./
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # Configuration
-CONFIG="LM/configs/benchmark_10_mini_gpt_xl.yaml"  # Change this to your desired config
-GHN_CHECKPOINT="Experiment/GHN-D-MultiGPU/best_model.pt"  # Change this to your GHN checkpoint
+CONFIG="LM/configs/benchmark_20_mini_gpt_xl_transformers.yaml"  # Change this to your desired config
+GHN_CHECKPOINT="Experiment/20917896/best_model.pt"  # Change this to your GHN checkpoint
 
 echo "Configuration: $CONFIG"
 echo "GHN Checkpoint: $GHN_CHECKPOINT"
 
 # Run GHN-initialized training
-python train_lm_ghn_init.py \
+python train_lm.py \
     --config "$CONFIG" \
+    --init_method ghn \
     --ghn_checkpoint "$GHN_CHECKPOINT" \
     --save_ghn_init
 
