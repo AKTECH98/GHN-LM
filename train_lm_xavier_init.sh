@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=BenchmarkXavier_20_mini_gpt_xl_transformers
+#SBATCH --job-name=BenchmarkXavier_10_mini_gpt_xl
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
 #SBATCH --comment="Language Model Training with Xavier Initialization"
@@ -55,7 +55,7 @@ echo "Virtual environment activated"
 # ===========================================
 
 # Configuration file to use
-CONFIG_FILE="LM/configs/benchmark_20_mini_gpt_xl_transformers.yaml"  # Change to desired config
+CONFIG_FILE="LM/configs/benchmark_10_mini_gpt_xl.yaml"  # Change to desired config
 
 # ===========================================
 # TRAINING COMMAND

@@ -1,8 +1,8 @@
 #!/bin/bash -l
-#SBATCH --job-name=GHN-T
+#SBATCH --job-name=GHN-I
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
-#SBATCH --comment="GHN-3 Language Model Training with TensorBoard"
+#SBATCH --comment="GHN-3 Language Model Training with Interpolation"
 #SBATCH --mail-user=slack:@ak3748       # Slack username to notify
 #SBATCH --mail-type=BEGIN,END
 #SBATCH --gres=gpu:a100:1
@@ -56,12 +56,12 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # Run GHN-3 training with enhanced features
 # Using the updated train_ghn.py script with organized config structure
 python train_ghn.py \
-    --model_name "GHN-T" \
+    --model_name "GHN-I" \
     --heads 2\
     --layers 3 \
     --seq_len 64 \
     --interm_epoch 5 \
-    --save "Experiment/GHN-T" \
+    --save "Experiment/GHN-I" \
     --epochs 75 \
     --batch_size 64 \
     --meta_batch_size 4 \
