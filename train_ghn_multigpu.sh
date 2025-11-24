@@ -40,7 +40,6 @@ DECODER="conv"
 MAX_SHAPE="1024,1024,1,1"  # Reduced from 1024,1024,1,1 to save memory
 
 # Model filtering (for ~100K models)
-EXCLUDE_OSS=true         # Exclude OSS models
 INCLUDE_EMBEDDINGS=true  # Set to true to include embeddings (uses more memory)
 MAX_D_MODEL=1024         # Maximum d_model for GPT Encoder/Mini GPT variants (~100K models)
 MAX_LAYERS=16            # Maximum layers for GPT Encoder/Mini GPT variants (~100K models)
@@ -113,7 +112,6 @@ echo "  - Models per GPU: $MODELS_PER_GPU"
 echo "  - WikiText-2 batch_size per GPU: $BATCH_SIZE"
 echo "  - Total effective batch: $TOTAL_EFFECTIVE_BATCH"
 echo "  - Max shape: $MAX_SHAPE"
-echo "  - Exclude OSS models: $EXCLUDE_OSS"
 echo "  - Include embeddings: $INCLUDE_EMBEDDINGS"
 if [ -n "$MAX_D_MODEL" ]; then
     echo "  - Max d_model: $MAX_D_MODEL"
@@ -153,9 +151,6 @@ TRAIN_ARGS=(
 )
 
 # Add optional flags
-if [ "$EXCLUDE_OSS" = true ]; then
-    TRAIN_ARGS+=(--exclude_oss)
-fi
 
 if [ "$INCLUDE_EMBEDDINGS" = true ]; then
     TRAIN_ARGS+=(--include_embeddings)

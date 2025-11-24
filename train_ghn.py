@@ -45,16 +45,6 @@ def parse_arguments():
     parser.add_argument('--interm_epoch', type=int, default=5, help='intermediate epochs to keep checkpoints for')
     parser.add_argument('--include_embeddings', action='store_true', help='include embedding layers in GHN prediction (default: exclude embeddings)')
     
-    # OSS model filtering arguments
-    parser.add_argument('--max_oss_d_model', type=int, default=None, 
-                       help='Maximum d_model for OSS models (filters large models). Suggested: 2048 for <30GB, 768 for <10GB memory')
-    parser.add_argument('--max_oss_layers', type=int, default=None,
-                       help='Maximum layers for OSS models (filters deep models). Suggested: 24 for <30GB, 12 for <10GB memory')
-    parser.add_argument('--exclude_large_oss', action='store_true',
-                       help='Exclude all OSS models with >1B parameters (GPT-J-6B, Mistral-7B, MPT-7B, GPT-Neo-2.7B, GPT-2-XL). Recommended for <30GB GPU')
-    parser.add_argument('--exclude_oss', action='store_true',
-                       help='Exclude ALL OSS models from training (only train on GPT Encoder and Mini GPT variants)')
-    
     # GPT Encoder/Mini GPT filtering arguments (for memory efficiency)
     parser.add_argument('--max_d_model', type=int, default=None,
                        help='Maximum d_model for GPT Encoder/Mini GPT variants (filters large models). Suggested: 512 for <40GB memory, 768 for <80GB')
@@ -141,25 +131,9 @@ def main():
         ve_cutoff=args.virtual_edges,
         dense=True,  # GHN-3 requires dense graphs
         exclude_embeddings=not args.include_embeddings,  # Convert include_embeddings to exclude_embeddings
-        max_oss_d_model=args.max_oss_d_model,
-        max_oss_layers=args.max_oss_layers,
-        exclude_large_oss=args.exclude_large_oss,
-        exclude_oss=args.exclude_oss,
         max_d_model=args.max_d_model,
         max_layers=args.max_layers
     )
-    
-    # Log filtering info
-    if args.exclude_oss:
-        log('OSS models excluded: Only training on GPT Encoder and Mini GPT variants')
-    elif args.exclude_large_oss or args.max_oss_d_model or args.max_oss_layers:
-        log('OSS model filtering enabled:')
-        if args.exclude_large_oss:
-            log('  - Excluding large OSS models (>1B parameters)')
-        if args.max_oss_d_model:
-            log(f'  - Max d_model for OSS: {args.max_oss_d_model}')
-        if args.max_oss_layers:
-            log(f'  - Max layers for OSS: {args.max_oss_layers}')
     
     # Log GPT Encoder/Mini GPT filtering info
     if args.max_d_model or args.max_layers:
@@ -266,7 +240,7 @@ def main():
                       compile_mode=args.compile)
 
     log('\nStarting training GHN with {} parameters!'.format(sum([p.numel() for p in ghn.parameters()])))
-    log(f'Number of architecture variants: {len(arch_configs)}')
+    log(f'Number of architecture variants: {len(arch_configs):,}')
     
     # Efficiency recommendation: Use ghn3.ops as base classes during training
     log('Note: For efficiency, it is recommended to use ghn3.ops as base classes during training the GHN')
