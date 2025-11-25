@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=GHN_init-20-mini-gpt-xl-transformers
+#SBATCH --job-name=GHN-T_10_mini_gpt_xl
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
 #SBATCH --comment="GHN-GPT Language Model Training with GHN Initialization"
@@ -51,8 +51,8 @@ export PYTHONPATH=$PYTHONPATH:./
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # Configuration
-CONFIG="LM/configs/benchmark_20_mini_gpt_xl_transformers.yaml"  # Change this to your desired config
-GHN_CHECKPOINT="Experiment/20917896/best_model.pt"  # Change this to your GHN checkpoint
+CONFIG="LM/configs/benchmark_10_mini_gpt_xl.yaml"  # Change this to your desired config
+GHN_CHECKPOINT="Experiment/GHN-T-MultiGPU/best_model.pt"  # Change this to your GHN checkpoint
 
 echo "Configuration: $CONFIG"
 echo "GHN Checkpoint: $GHN_CHECKPOINT"

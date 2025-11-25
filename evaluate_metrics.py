@@ -62,9 +62,8 @@ def find_experiment_dirs_by_init_method(config_name: str) -> Dict[str, Path]:
     # Search all patterns for all init methods
     patterns = {
         "default": f"Benchmark_{base_name}*",
-        "he": f"BenchmarkHEInit_{base_name}*",
-        "xavier": f"BenchmarkXavier_{base_name}*",
-        "ghn": f"GHNInit_{base_name}*"
+        "ghn": f"GHN-T_{base_name}*",
+        "ghn-i": f"GHN-I_{base_name}*"
     }
     
     results = {}
@@ -140,12 +139,10 @@ class MetricsEvaluator:
         
         # Detect init method from experiment directory name
         exp_name = self.experiment_dir.name
-        if exp_name.startswith("GHNInit_"):
+        if exp_name.startswith("GHN-T_"):
             self.init_method = "ghn"
-        elif exp_name.startswith("BenchmarkHEInit_"):
-            self.init_method = "he"
-        elif exp_name.startswith("BenchmarkXavier_"):
-            self.init_method = "xavier"
+        elif exp_name.startswith("GHN-I_"):
+            self.init_method = "ghn-i"
         elif exp_name.startswith("Benchmark_"):
             self.init_method = "default"
         else:
@@ -164,15 +161,15 @@ class MetricsEvaluator:
         results = {}
         
         if not TENSORBOARD_AVAILABLE or self.tensorboard_dir is None:
-            print("   ⚠️  TensorBoard not available or log dir not found. Using checkpoints instead.")
-            return self.extract_perplexity_from_checkpoints(target_epochs)
+            print("   ⚠️  TensorBoard not available or log dir not found. Cannot extract perplexity.")
+            return results
         
         try:
             # Find event file
             event_files = list(self.tensorboard_dir.glob("events.out.tfevents.*"))
             if not event_files:
-                print("   ⚠️  No TensorBoard event files found. Using checkpoints instead.")
-                return self.extract_perplexity_from_checkpoints(target_epochs)
+                print("   ⚠️  No TensorBoard event files found. Cannot extract perplexity.")
+                return results
             
             # Use the first event file
             event_file = event_files[0]
@@ -215,8 +212,8 @@ class MetricsEvaluator:
             
         except Exception as e:
             print(f"   ⚠️  Error reading TensorBoard logs: {e}")
-            print(f"   📦 Falling back to checkpoint extraction...")
-            return self.extract_perplexity_from_checkpoints(target_epochs)
+            print(f"   ❌ Cannot extract perplexity without TensorBoard logs.")
+            return results
         
         return results
     
@@ -291,57 +288,54 @@ class MetricsEvaluator:
         print(f"\n🔍 Analyzing convergence...")
         print(f"   Threshold: {convergence_threshold}, Patience: {convergence_patience}")
         
-        # Try to get validation loss history from TensorBoard
+        # Get validation loss history from TensorBoard only
         val_losses = []
         
-        if TENSORBOARD_AVAILABLE and self.tensorboard_dir is not None:
-            try:
-                event_files = list(self.tensorboard_dir.glob("events.out.tfevents.*"))
-                if event_files:
-                    ea = EventAccumulator(str(self.tensorboard_dir))
-                    ea.Reload()
-                    
-                    val_loss_tag = 'Epoch/Val_Loss'
-                    if val_loss_tag in ea.Tags()['scalars']:
-                        val_scalars = ea.Scalars(val_loss_tag)
-                        for scalar in val_scalars:
-                            epoch = int(scalar.step) + 1
-                            val_losses.append((epoch, scalar.value))
-                        val_losses.sort(key=lambda x: x[0])
-            except Exception as e:
-                print(f"   ⚠️  Error reading TensorBoard for convergence: {e}")
+        if not TENSORBOARD_AVAILABLE or self.tensorboard_dir is None:
+            print("   ⚠️  TensorBoard not available or log dir not found. Cannot analyze convergence.")
+            return {
+                "converged": False,
+                "convergence_epoch": None,
+                "convergence_loss": None,
+                "convergence_perplexity": None,
+                "epochs_to_convergence": None
+            }
         
-        # Fallback to checkpoints if TensorBoard failed
-        if not val_losses:
-            checkpoint_pattern = str(self.experiment_dir / "epoch_*.pt")
-            checkpoint_files = glob.glob(checkpoint_pattern)
+        try:
+            event_files = list(self.tensorboard_dir.glob("events.out.tfevents.*"))
+            if not event_files:
+                print("   ⚠️  No TensorBoard event files found. Cannot analyze convergence.")
+                return {
+                    "converged": False,
+                    "convergence_epoch": None,
+                    "convergence_loss": None,
+                    "convergence_perplexity": None,
+                    "epochs_to_convergence": None
+                }
             
-            for checkpoint_path in checkpoint_files:
-                try:
-                    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-                    epoch = checkpoint.get('epoch', -1) + 1
-                    val_loss = checkpoint.get('val_loss', None)
-                    if val_loss is not None:
-                        val_losses.append((epoch, val_loss))
-                except Exception:
-                    continue
+            ea = EventAccumulator(str(self.tensorboard_dir))
+            ea.Reload()
             
-            # Also check best_model.pt
-            best_model_path = self.experiment_dir / "best_model.pt"
-            if best_model_path.exists():
-                try:
-                    checkpoint = torch.load(best_model_path, map_location="cpu", weights_only=False)
-                    epoch = checkpoint.get('epoch', -1) + 1
-                    val_loss = checkpoint.get('val_loss', None)
-                    if val_loss is not None:
-                        val_losses.append((epoch, val_loss))
-                except Exception:
-                    pass
-            
-            val_losses.sort(key=lambda x: x[0])
+            val_loss_tag = 'Epoch/Val_Loss'
+            if val_loss_tag in ea.Tags()['scalars']:
+                val_scalars = ea.Scalars(val_loss_tag)
+                for scalar in val_scalars:
+                    epoch = int(scalar.step) + 1
+                    val_losses.append((epoch, scalar.value))
+                val_losses.sort(key=lambda x: x[0])
+        except Exception as e:
+            print(f"   ⚠️  Error reading TensorBoard for convergence: {e}")
+            print("   ❌ Cannot analyze convergence without TensorBoard logs.")
+            return {
+                "converged": False,
+                "convergence_epoch": None,
+                "convergence_loss": None,
+                "convergence_perplexity": None,
+                "epochs_to_convergence": None
+            }
         
         if not val_losses:
-            print("   ⚠️  No validation loss data found")
+            print("   ⚠️  No validation loss data found in TensorBoard logs")
             return {
                 "converged": False,
                 "convergence_epoch": None,
@@ -670,8 +664,8 @@ def main():
     
     # Print comparison table for perplexity at intervals
     print("Perplexity at Intervals:")
-    print(f"{'Epoch':<8} {'Default':<12} {'HE Init':<12} {'Xavier':<12} {'GHN Init':<12}")
-    print("-" * 60)
+    print(f"{'Epoch':<8} {'Default':<12} {'GHN-T':<12} {'GHN-I':<12}")
+    print("-" * 50)
     
     # Get all epochs from all results
     all_epochs = set()
@@ -681,7 +675,7 @@ def main():
     
     for epoch in sorted(all_epochs):
         row = [f"{epoch}"]
-        for init_method in ["default", "he", "xavier", "ghn"]:
+        for init_method in ["default", "ghn", "ghn-i"]:
             if init_method in all_results:
                 val_ppl = None
                 for entry in all_results[init_method]['perplexity_at_intervals']:
@@ -694,13 +688,13 @@ def main():
                     row.append("N/A")
             else:
                 row.append("N/A")
-        print(f"{row[0]:<8} {row[1]:<12} {row[2]:<12} {row[3]:<12} {row[4]:<12}")
+        print(f"{row[0]:<8} {row[1]:<12} {row[2]:<12} {row[3]:<12}")
     
     # Print convergence comparison
     print(f"\nConvergence:")
     print(f"{'Init Method':<15} {'Converged':<12} {'Epoch':<8} {'Perplexity':<12}")
     print("-" * 50)
-    for init_method in ["default", "he", "xavier", "ghn"]:
+    for init_method in ["default", "ghn", "ghn-i"]:
         if init_method in all_results:
             conv = all_results[init_method]['convergence']
             print(f"{init_method:<15} {str(conv['converged']):<12} {conv['convergence_epoch']:<8} {conv['convergence_perplexity']:.2f}")
@@ -709,7 +703,7 @@ def main():
     print(f"\nTest Evaluation:")
     print(f"{'Init Method':<15} {'Test Loss':<12} {'Test Perplexity':<15}")
     print("-" * 45)
-    for init_method in ["default", "he", "xavier", "ghn"]:
+    for init_method in ["default", "ghn", "ghn-i"]:
         if init_method in all_results:
             test = all_results[init_method]['test_evaluation']
             print(f"{init_method:<15} {test['test_loss']:.4f}      {test['test_perplexity']:.2f}")

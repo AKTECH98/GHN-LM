@@ -31,6 +31,8 @@ runs/
 Experiment/
 logging/
 tensor_log/
+SOTA_logs/
+SOTA_tensor_logs/
 start_tensorboard.sh
 
 # Virtual environment

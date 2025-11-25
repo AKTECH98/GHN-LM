@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=GHN-D-MultiGPU
+#SBATCH --job-name=GHN-I-MultiGPU
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
 #SBATCH --comment="GHN-3 Language Model Training with Multiple GPUs (DDP)"
@@ -20,7 +20,7 @@
 NUM_GPUS=${SLURM_GPUS:-2}  # Default to 4, or use SLURM_GPUS if set
 
 # Training configuration
-MODEL_NAME="GHN-D-MultiGPU"
+MODEL_NAME="GHN-I-MultiGPU"
 HEADS=2
 LAYERS=3
 SEQ_LEN=64
