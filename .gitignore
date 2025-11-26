@@ -46,3 +46,6 @@ GHN_Models/
 ckpts/
 OLDExperiment/
 OLDtensor_log/
+Final_tensors/
+GHN-T_vs_GHN-I_DIFFERENCES.md
+NotFinalEvaluations/

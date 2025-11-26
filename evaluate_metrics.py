@@ -79,7 +79,7 @@ def find_experiment_dirs_by_init_method(config_name: str) -> Dict[str, Path]:
 
 def find_tensorboard_dir(job_id: str) -> Optional[Path]:
     """Find TensorBoard log directory for a given job_id."""
-    tensor_log_base = Path("tensor_log")
+    tensor_log_base = Path("Final_tensors")
     if not tensor_log_base.exists():
         return None
     
@@ -697,7 +697,9 @@ def main():
     for init_method in ["default", "ghn", "ghn-i"]:
         if init_method in all_results:
             conv = all_results[init_method]['convergence']
-            print(f"{init_method:<15} {str(conv['converged']):<12} {conv['convergence_epoch']:<8} {conv['convergence_perplexity']:.2f}")
+            epoch_str = str(conv['convergence_epoch']) if conv['convergence_epoch'] is not None else "N/A"
+            perplexity_str = f"{conv['convergence_perplexity']:.2f}" if conv['convergence_perplexity'] is not None else "N/A"
+            print(f"{init_method:<15} {str(conv['converged']):<12} {epoch_str:<8} {perplexity_str:<12}")
     
     # Print test evaluation comparison
     print(f"\nTest Evaluation:")
