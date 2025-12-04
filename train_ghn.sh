@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=GHN-I-64
+#SBATCH --job-name=GHN-I-64-2-noAMP
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
 #SBATCH --comment="GHN-3 Language Model Training with Interpolation"
@@ -56,20 +56,19 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # Run GHN-3 training with enhanced features
 # Using the updated train_ghn.py script with organized config structure
 python train_ghn.py \
-    --model_name "GHN-I-64" \
+    --model_name "GHN-I-64-2-noAMP" \
     --heads 2\
     --layers 3 \
     --seq_len 64 \
     --interm_epoch 5 \
-    --save "Experiment/GHN-I-64" \
-    --epochs 75 \
+    --save "Experiment/GHN-I-64-2-noAMP" \
+    --epochs 700 \
     --batch_size 64 \
-    --meta_batch_size 1 \
+    --meta_batch_size 2 \
     --lr 0.0004 \
     --wd 0.01 \
     --opt adam \
     --scheduler cosine \
-    --amp \
     --include_embeddings \
     --max_d_model 1024 \
     --max_layers 20 \

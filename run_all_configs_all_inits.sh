@@ -9,6 +9,9 @@ cd "$SCRIPT_DIR"
 # Config directory
 CONFIG_DIR="LM/configs"
 
+# Experiment base name (change this to customize experiment names)
+EXPERIMENT_BASE_NAME="Benchmark_16_"
+
 # Find all benchmark config files
 CONFIG_FILES=($(ls -1 "$CONFIG_DIR"/benchmark_*.yaml 2>/dev/null | sort))
 
@@ -21,8 +24,8 @@ echo "=========================================="
 echo "Running All Configs with All Init Methods"
 echo "=========================================="
 echo "Found ${#CONFIG_FILES[@]} config files"
-echo "Init methods: default, he, xavier"
-echo "Total jobs to submit: $((${#CONFIG_FILES[@]} * 3))"
+echo "Init methods: default"
+echo "Total jobs to submit: ${#CONFIG_FILES[@]}"
 echo "=========================================="
 echo ""
 
@@ -36,27 +39,11 @@ get_config_name() {
 }
 
 # Function to generate experiment name
-# e.g., "1_tiny" + "default" -> "Benchmark_1_tiny"
-# e.g., "1_tiny" + "he" -> "BenchmarkHEInit_1_tiny"
-# e.g., "1_tiny" + "xavier" -> "BenchmarkXavier_1_tiny"
+# Uses EXPERIMENT_BASE_NAME variable (default: "Benchmark")
+# e.g., "1_tiny" -> "${EXPERIMENT_BASE_NAME}_1_tiny"
 get_experiment_name() {
     local config_name="$1"
-    local init_method="$2"
-    
-    case "$init_method" in
-        default)
-            echo "Benchmark_${config_name}"
-            ;;
-        he)
-            echo "BenchmarkHEInit_${config_name}"
-            ;;
-        xavier)
-            echo "BenchmarkXavier_${config_name}"
-            ;;
-        *)
-            echo "Benchmark_${config_name}_${init_method}"
-            ;;
-    esac
+    echo "${EXPERIMENT_BASE_NAME}_${config_name}"
 }
 
 # Function to submit a job
@@ -158,12 +145,10 @@ for config_file in "${CONFIG_FILES[@]}"; do
     config_name=$(get_config_name "$config_file")
     echo "Processing config: $config_name"
     
-    # Submit jobs for each init method
-    for init_method in default he xavier; do
-        experiment_name=$(get_experiment_name "$config_name" "$init_method")
-        submit_job "$config_file" "$init_method" "$experiment_name"
-        SUBMITTED_JOBS+=("$experiment_name")
-    done
+    # Submit job with default init method
+    experiment_name=$(get_experiment_name "$config_name")
+    submit_job "$config_file" "default" "$experiment_name"
+    SUBMITTED_JOBS+=("$experiment_name")
     
     echo ""
 done

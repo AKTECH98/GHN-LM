@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=GHN-I-MultiGPU
+#SBATCH --job-name=GHN-I-MultiGPU-Final-16-2
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
 #SBATCH --comment="GHN-3 Language Model Training with Multiple GPUs (DDP)"
@@ -20,14 +20,14 @@
 NUM_GPUS=${SLURM_GPUS:-2}  # Default to 4, or use SLURM_GPUS if set
 
 # Training configuration
-MODEL_NAME="GHN-I-MultiGPU"
+MODEL_NAME="GHN-I-MultiGPU-Final-16-2"
 HEADS=2
 LAYERS=3
 SEQ_LEN=64
 INTERM_EPOCH=5
-EPOCHS=75
-BATCH_SIZE=64              # WikiText-2 batch size per GPU
-META_BATCH_SIZE=2        # Total models across all GPUs (will be split evenly, 4 per GPU)
+EPOCHS=180              
+BATCH_SIZE=16              # WikiText-2 batch size per GPU
+META_BATCH_SIZE=2        # Total models across all GPUs (will be split evenly)
 LR=0.0004
 WD=0.01
 OPTIMIZER="adam"
@@ -42,7 +42,7 @@ MAX_SHAPE="1024,1024,1,1"  # Reduced from 1024,1024,1,1 to save memory
 # Model filtering (for ~100K models)
 INCLUDE_EMBEDDINGS=true  # Set to true to include embeddings (uses more memory)
 MAX_D_MODEL=1024         # Maximum d_model for GPT Encoder/Mini GPT variants (~100K models)
-MAX_LAYERS=16            # Maximum layers for GPT Encoder/Mini GPT variants (~100K models)
+MAX_LAYERS=20            # Maximum layers for GPT Encoder/Mini GPT variants (~100K models)
 
 # =============================================================================
 # Job Setup

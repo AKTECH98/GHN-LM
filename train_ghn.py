@@ -253,6 +253,9 @@ def main():
     # Track best metrics for saving best model
     best_loss = float('inf')
     best_perplexity = float('inf')
+    
+    # Calculate number of batches per epoch for global step calculation
+    batches_per_epoch = len(train_queue)
 
     for epoch in range(trainer.start_epoch, args.epochs):
         log('\nepoch={:03d}/{:03d}, lr={:e}'.format(epoch + 1, args.epochs, trainer.get_lr()))
@@ -292,22 +295,25 @@ def main():
             # Log to console
             trainer.log(step)
             
+            # Calculate global step for TensorBoard (continues across epochs)
+            global_step = epoch * batches_per_epoch + step
+            
             # Log to TensorBoard (only on rank 0)
             if tensorboard_writer is not None and step % args.log_interval == 0:
                 metrics = {metric: value.avg for metric, value in trainer.metrics.items()}
                 
-                # Log loss and perplexity
-                tensorboard_writer.add_scalar('Train/Loss', metrics.get('loss', 0), step)
-                tensorboard_writer.add_scalar('Train/Perplexity', metrics.get('top1', 0), step)  # top1 stores perplexity for LM
+                # Log loss and perplexity using global_step to avoid resetting after each epoch
+                tensorboard_writer.add_scalar('Train/Loss', metrics.get('loss', 0), global_step)
+                tensorboard_writer.add_scalar('Train/Perplexity', metrics.get('top1', 0), global_step)  # top1 stores perplexity for LM
                 
                 if 'loss_predwd' in metrics:
-                    tensorboard_writer.add_scalar('Train/Loss_PredWD', metrics['loss_predwd'], step)
+                    tensorboard_writer.add_scalar('Train/Loss_PredWD', metrics['loss_predwd'], global_step)
                 
                 # Log learning rate
-                tensorboard_writer.add_scalar('Train/LR', trainer.get_lr(), step)
+                tensorboard_writer.add_scalar('Train/LR', trainer.get_lr(), global_step)
                 
-                # Log epoch
-                tensorboard_writer.add_scalar('Train/Epoch', epoch, step)
+                # Log epoch (using global_step so it's visible in the same timeline)
+                tensorboard_writer.add_scalar('Train/Epoch', epoch, global_step)
 
             if args.save:
                 trainer.save(epoch, step, {'args': args, 'config': config}, interm_epoch=args.interm_epoch)

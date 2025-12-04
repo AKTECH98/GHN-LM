@@ -38,13 +38,13 @@ except ImportError:
 
 def find_experiment_dirs_by_init_method(config_name: str) -> Dict[str, Path]:
     """
-    Find experiment directories matching the config name, grouped by init method.
+    Find experiment directories matching the config name, grouped by category.
     
     Args:
         config_name: Base config name (e.g., "benchmark_1_tiny")
         
     Returns:
-        Dictionary mapping init_method -> experiment_dir (most recent for each method)
+        Dictionary mapping category -> experiment_dir (most recent for each category)
     """
     experiment_base = Path("Experiment")
     if not experiment_base.exists():
@@ -59,20 +59,21 @@ def find_experiment_dirs_by_init_method(config_name: str) -> Dict[str, Path]:
     else:
         base_name = config_name_lower
     
-    # Search all patterns for all init methods
+    # Search all patterns for the four categories
     patterns = {
-        "default": f"Benchmark_{base_name}*",
-        "ghn": f"GHN-T_{base_name}*",
-        "ghn-i": f"GHN-I_{base_name}*"
+        "Benchmark_": f"Benchmark_{base_name}*",
+        "Benchmark_16__": f"Benchmark_16__{base_name}*",
+        "GHN-I_16-2_": f"GHN-I_16-2_{base_name}*",
+        "GHN-I_64-2_": f"GHN-I_64-2_{base_name}*"
     }
     
     results = {}
-    for init_method, pattern in patterns.items():
+    for category, pattern in patterns.items():
         matches = list(experiment_base.glob(pattern))
         if matches:
             # Sort by modification time (newest first) and take the most recent
             matches = sorted(matches, key=lambda p: p.stat().st_mtime, reverse=True)
-            results[init_method] = matches[0]
+            results[category] = matches[0]
     
     return results
 
@@ -137,14 +138,16 @@ class MetricsEvaluator:
         # Find TensorBoard log directory
         self.tensorboard_dir = find_tensorboard_dir(self.job_id)
         
-        # Detect init method from experiment directory name
+        # Detect category from experiment directory name
         exp_name = self.experiment_dir.name
-        if exp_name.startswith("GHN-T_"):
-            self.init_method = "ghn"
-        elif exp_name.startswith("GHN-I_"):
-            self.init_method = "ghn-i"
+        if exp_name.startswith("GHN-I_64-2_"):
+            self.init_method = "GHN-I_64-2_"
+        elif exp_name.startswith("GHN-I_16-2_"):
+            self.init_method = "GHN-I_16-2_"
+        elif exp_name.startswith("Benchmark_16__"):
+            self.init_method = "Benchmark_16__"
         elif exp_name.startswith("Benchmark_"):
-            self.init_method = "default"
+            self.init_method = "Benchmark_"
         else:
             self.init_method = "unknown"
     
@@ -620,9 +623,9 @@ def main():
             f"  In directory: Experiment/"
         )
     
-    print(f"   Found experiments for {len(experiment_dirs)} init methods:")
-    for init_method, exp_dir in experiment_dirs.items():
-        print(f"      {init_method}: {exp_dir.name}")
+    print(f"   Found experiments for {len(experiment_dirs)} categories:")
+    for category, exp_dir in experiment_dirs.items():
+        print(f"      {category}: {exp_dir.name}")
     
     # Load YAML config once to get convergence defaults
     with open(config_file, 'r') as f:
@@ -631,15 +634,15 @@ def main():
     convergence_patience = training_config.get("early_stopping_patience", 3)
     convergence_threshold = training_config.get("early_stopping_min_delta", 0.001)
     
-    # Evaluate metrics for each init method
+    # Evaluate metrics for each category
     all_results = {}
     
-    for init_method, experiment_dir in experiment_dirs.items():
+    for category, experiment_dir in experiment_dirs.items():
         print(f"\n{'='*60}")
-        print(f"📊 Evaluating {init_method.upper()} Init Method")
+        print(f"📊 Evaluating {category} Category")
         print(f"{'='*60}")
         
-        # Create evaluator for this init method
+        # Create evaluator for this category
         evaluator = MetricsEvaluator(
             config_file=config_file,
             experiment_dir=experiment_dir,
@@ -654,18 +657,20 @@ def main():
         )
         
         # Store results (don't save individual files)
-        all_results[init_method] = metrics
+        all_results[category] = metrics
     
-    # Print summary for all init methods
+    # Print summary for all categories
     print(f"\n{'='*60}")
-    print(f"📊 Summary for All Init Methods")
+    print(f"📊 Summary for All Categories")
     print(f"{'='*60}")
     print(f"Config: {config_name}\n")
     
     # Print comparison table for perplexity at intervals
     print("Perplexity at Intervals:")
-    print(f"{'Epoch':<8} {'Default':<12} {'GHN-T':<12} {'GHN-I':<12}")
-    print("-" * 50)
+    categories = ["Benchmark_", "Benchmark_16__", "GHN-I_16-2_", "GHN-I_64-2_"]
+    header = f"{'Epoch':<8} " + " ".join([f"{cat:<15}" for cat in categories])
+    print(header)
+    print("-" * 75)
     
     # Get all epochs from all results
     all_epochs = set()
@@ -675,10 +680,10 @@ def main():
     
     for epoch in sorted(all_epochs):
         row = [f"{epoch}"]
-        for init_method in ["default", "ghn", "ghn-i"]:
-            if init_method in all_results:
+        for category in categories:
+            if category in all_results:
                 val_ppl = None
-                for entry in all_results[init_method]['perplexity_at_intervals']:
+                for entry in all_results[category]['perplexity_at_intervals']:
                     if entry['epoch'] == epoch:
                         val_ppl = entry['val_perplexity']
                         break
@@ -688,27 +693,27 @@ def main():
                     row.append("N/A")
             else:
                 row.append("N/A")
-        print(f"{row[0]:<8} {row[1]:<12} {row[2]:<12} {row[3]:<12}")
+        print(f"{row[0]:<8} " + " ".join([f"{val:<15}" for val in row[1:]]))
     
     # Print convergence comparison
     print(f"\nConvergence:")
-    print(f"{'Init Method':<15} {'Converged':<12} {'Epoch':<8} {'Perplexity':<12}")
-    print("-" * 50)
-    for init_method in ["default", "ghn", "ghn-i"]:
-        if init_method in all_results:
-            conv = all_results[init_method]['convergence']
+    print(f"{'Category':<20} {'Converged':<12} {'Epoch':<8} {'Perplexity':<12}")
+    print("-" * 55)
+    for category in categories:
+        if category in all_results:
+            conv = all_results[category]['convergence']
             epoch_str = str(conv['convergence_epoch']) if conv['convergence_epoch'] is not None else "N/A"
             perplexity_str = f"{conv['convergence_perplexity']:.2f}" if conv['convergence_perplexity'] is not None else "N/A"
-            print(f"{init_method:<15} {str(conv['converged']):<12} {epoch_str:<8} {perplexity_str:<12}")
+            print(f"{category:<20} {str(conv['converged']):<12} {epoch_str:<8} {perplexity_str:<12}")
     
     # Print test evaluation comparison
     print(f"\nTest Evaluation:")
-    print(f"{'Init Method':<15} {'Test Loss':<12} {'Test Perplexity':<15}")
-    print("-" * 45)
-    for init_method in ["default", "ghn", "ghn-i"]:
-        if init_method in all_results:
-            test = all_results[init_method]['test_evaluation']
-            print(f"{init_method:<15} {test['test_loss']:.4f}      {test['test_perplexity']:.2f}")
+    print(f"{'Category':<20} {'Test Loss':<12} {'Test Perplexity':<15}")
+    print("-" * 50)
+    for category in categories:
+        if category in all_results:
+            test = all_results[category]['test_evaluation']
+            print(f"{category:<20} {test['test_loss']:.4f}      {test['test_perplexity']:.2f}")
     
     # Save combined results in Evaluations folder
     evaluations_dir = Path("Evaluations")
@@ -719,7 +724,7 @@ def main():
         json.dump({
             "config_file": str(config_file),
             "config_name": config_name,
-            "results_by_init_method": all_results
+            "results_by_category": all_results
         }, f, indent=2)
     print(f"\n💾 Combined metrics saved to: {combined_output}")
 
