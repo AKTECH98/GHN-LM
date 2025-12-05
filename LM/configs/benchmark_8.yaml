@@ -1,19 +1,19 @@
-# Benchmark 4: Large Model Configuration
-# ~50M parameters - High performance
+# Benchmark 8: Mini GPT Model Configuration
+# ~80.4M parameters - NOT in GHN training dataset (for evaluation)
 
 model:
-  model_type: "gpt_encoder"
+  model_type: "mini_gpt"
   vocab_size: 50257
-  d_model: 512
-  n_layer: 8
-  n_head: 8
-  d_ff: 2048
-  max_seq_len: 64
+  d_model: 384
+  n_layer: 10
+  n_head: 1
+  d_ff: 4608
+  max_seq_len: 1024
   p_drop: 0.1
 
 training:
   epochs: 100
-  batch_size: 64
+  batch_size: 32
   learning_rate: 0.0003
   weight_decay: 0.01
   warmup_steps: 1000
@@ -23,11 +23,11 @@ training:
   log_interval: 100
   device: "cuda"
   mixed_precision: true
-  gradient_accumulation_steps: 4
+  gradient_accumulation_steps: 2
   seed: 42
   early_stopping_patience: 5
   early_stopping_min_delta: 0.001
 
 data:
-  seq_len: 64
+  seq_len: 1024
   num_workers: 4

@@ -1,8 +1,8 @@
 #!/bin/bash
-# Script to run the first 10 configs with GHN initialization
+# Script to run all configs with GHN initialization
 # This will submit SLURM jobs for each config with GHN init method
 #
-# Usage: ./run_first_10_configs_ghn_init.sh [GHN_CHECKPOINT]
+# Usage: ./run_all_configs_ghn_init.sh [GHN_CHECKPOINT]
 #   If GHN_CHECKPOINT is not provided, it will use the GHN_CHECKPOINT environment variable
 #   If neither is set, the script will exit with an error
 
@@ -32,8 +32,8 @@ fi
 # Config directory
 CONFIG_DIR="LM/configs"
 
-# Find all benchmark config files and take only the first 10
-CONFIG_FILES=($(ls -1 "$CONFIG_DIR"/benchmark_*.yaml 2>/dev/null | sort | head -n 10))
+# Find all benchmark config files
+CONFIG_FILES=($(ls -1 "$CONFIG_DIR"/benchmark_*.yaml 2>/dev/null | sort))
 
 if [ ${#CONFIG_FILES[@]} -eq 0 ]; then
     echo "❌ Error: No benchmark config files found in $CONFIG_DIR"
@@ -41,9 +41,9 @@ if [ ${#CONFIG_FILES[@]} -eq 0 ]; then
 fi
 
 echo "=========================================="
-echo "Running First 10 Configs with GHN Init"
+echo "Running All Configs with GHN Init"
 echo "=========================================="
-echo "Found ${#CONFIG_FILES[@]} config files (first 10)"
+echo "Found ${#CONFIG_FILES[@]} config files"
 echo "GHN Checkpoint: $GHN_CHECKPOINT"
 echo "Total jobs to submit: ${#CONFIG_FILES[@]}"
 echo "=========================================="
@@ -165,7 +165,7 @@ EOF
 # Track submitted jobs
 SUBMITTED_JOBS=()
 
-# Loop through the first 10 config files
+# Loop through all config files
 for config_file in "${CONFIG_FILES[@]}"; do
     config_name=$(get_config_name "$config_file")
     echo "Processing config: $config_name"

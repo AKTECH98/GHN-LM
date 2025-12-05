@@ -22,7 +22,6 @@ from GHN.graph import Graph, GraphBatch
 
 # Import the available model architectures
 from LM import (
-    GPTEncoderLayerLM, GPTEncoderConfig,
     GPTDecoderLM, MiniGPTConfig
 )
 
@@ -55,7 +54,7 @@ def create_model_from_config(model_type: str, config: Dict, device: str = 'cpu')
     Factory function to create different types of language models.
     
     Args:
-        model_type: Type of model ('gpt_encoder', 'mini_gpt')
+        model_type: Type of model ('mini_gpt')
         config: Model configuration dictionary
         device: Device to create model on
     
@@ -74,13 +73,13 @@ def create_model_from_config(model_type: str, config: Dict, device: str = 'cpu')
         config_copy.pop(field, None)
     
     # Parameter mapping for different model types
-    if model_type in ['gpt_encoder', 'mini_gpt']:
+    if model_type == 'mini_gpt':
         # Transformer-based models: map parameters
         _map_transformer_params(config_copy)
         model = _create_transformer_model(model_type, config_copy)
     else:
         raise ValueError(f"Unknown model type: {model_type}. "
-                        f"Supported types: gpt_encoder, mini_gpt")
+                        f"Supported types: mini_gpt")
     
     return model.to(device)
 
@@ -100,9 +99,7 @@ def _map_transformer_params(config: Dict) -> None:
 
 def _create_transformer_model(model_type: str, config: Dict):
     """Create Transformer-based model."""
-    if model_type == 'gpt_encoder':
-        return GPTEncoderLayerLM(GPTEncoderConfig(**config))
-    elif model_type == 'mini_gpt':
+    if model_type == 'mini_gpt':
         return GPTDecoderLM(MiniGPTConfig(**config))
     else:
         raise ValueError(f"Unknown Transformer model type: {model_type}")
@@ -165,8 +162,8 @@ def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024,
     Generate comprehensive language model configurations for GHN training.
     
     Creates ALL possible combinations of model architectures with the following coverage:
-    - Model types: GPT Encoder, Mini GPT
-    - Layers: 1-20 (extensive range)
+    - Model types: Mini GPT
+    - Layers: 1-30 (extensive range, supports ~140K models)
     - Dimensions: 32-2048 (comprehensive range of model sizes)
     - Attention heads: 1-32 (all valid divisors of d_model)
     - MLP ratios: 1.0-8.5 (all reasonable feed-forward ratios)
@@ -174,9 +171,9 @@ def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024,
     Args:
         vocab_size: Vocabulary size for language models
         max_len: Maximum sequence length
-        max_d_model: Maximum d_model for GPT Encoder/Mini GPT variants (filters out larger models).
+        max_d_model: Maximum d_model for Mini GPT variants (filters out larger models).
                     Default None = no limit. Suggested: 512 for <40GB memory, 768 for <80GB
-        max_layers: Maximum layers for GPT Encoder/Mini GPT variants (filters out deeper models).
+        max_layers: Maximum layers for Mini GPT variants (filters out deeper models).
                    Default None = no limit. Suggested: 8 for <40GB memory, 12 for <80GB
         
     Returns:
@@ -187,7 +184,7 @@ def ghn_training_variants(vocab_size: int = 50257, max_len: int = 1024,
     # Define parameter ranges
     d_models = [32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 480, 512, 
                 576, 640, 704, 768, 832, 896, 960, 1024, 1152, 1280, 1408, 1536, 1664, 1792, 1920, 2048]
-    layer_counts = list(range(1, 21))  # 1-20 layers
+    layer_counts = list(range(1, 31))  # 1-30 layers (supports ~140K models)
     mlp_ratios = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5]
     
     # Filter parameter ranges based on max_d_model and max_layers
@@ -214,9 +211,6 @@ def _generate_transformer_variants(d_models: List[int], layer_counts: List[int],
             for n_heads in valid_heads:
                 for mlp_ratio in mlp_ratios:
                     # Generate all variants without size limits
-                    name = f"gpt-encoder-{n_layers}L-{d_model}d-h{n_heads}-r{mlp_ratio}"
-                    variants.append(_create_base_config(name, "gpt_encoder", d_model, n_layers, n_heads, mlp_ratio, max_len, vocab_size))
-                    
                     name = f"mini-gpt-{n_layers}L-{d_model}d-h{n_heads}-r{mlp_ratio}"
                     variants.append(_create_base_config(name, "mini_gpt", d_model, n_layers, n_heads, mlp_ratio, max_len, vocab_size))
     
@@ -258,8 +252,8 @@ class GHNLMVariantsDataset(Dataset):
             device: Device to create models on
             ve_cutoff: Virtual edge cutoff for graph construction
             dense: Whether to use dense graphs
-            max_d_model: Maximum d_model for GPT Encoder/Mini GPT variants (filters large models)
-            max_layers: Maximum layers for GPT Encoder/Mini GPT variants (filters deep models)
+            max_d_model: Maximum d_model for Mini GPT variants (filters large models)
+            max_layers: Maximum layers for Mini GPT variants (filters deep models)
         """
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.ve_cutoff = ve_cutoff
@@ -341,9 +335,9 @@ def build_ghn_variants_dataloader(
         dense: Whether to use dense graphs
         shuffle: Whether to shuffle the dataset
         exclude_embeddings: Whether to exclude embedding layers from GHN prediction
-        max_d_model: Maximum d_model for GPT Encoder/Mini GPT variants (None = no limit)
+        max_d_model: Maximum d_model for Mini GPT variants (None = no limit)
                     Suggested: 512 for <40GB memory, 768 for <80GB
-        max_layers: Maximum layers for GPT Encoder/Mini GPT variants (None = no limit)
+        max_layers: Maximum layers for Mini GPT variants (None = no limit)
                    Suggested: 8 for <40GB memory, 12 for <80GB
         
     Returns:

@@ -1,8 +1,8 @@
 #!/bin/bash
-# Script to run evaluations for the first 10 configs
+# Script to run evaluations for all configs
 # This will submit SLURM jobs for each config to evaluate metrics
 #
-# Usage: ./run_first_10_configs_evaluation.sh [INTERVALS] [DEVICE]
+# Usage: ./run_all_configs_evaluation.sh [INTERVALS] [DEVICE]
 #   INTERVALS: Comma-separated epochs for perplexity extraction (default: "1,2,5,10,20,50")
 #   DEVICE: Device to use for evaluation (default: "cuda")
 
@@ -17,8 +17,8 @@ DEVICE=${2:-"cuda"}
 # Config directory
 CONFIG_DIR="LM/configs"
 
-# Find all benchmark config files and take only the first 10
-CONFIG_FILES=($(ls -1 "$CONFIG_DIR"/benchmark_*.yaml 2>/dev/null | sort | head -n 10))
+# Find all benchmark config files
+CONFIG_FILES=($(ls -1 "$CONFIG_DIR"/benchmark_*.yaml 2>/dev/null | sort))
 
 if [ ${#CONFIG_FILES[@]} -eq 0 ]; then
     echo "❌ Error: No benchmark config files found in $CONFIG_DIR"
@@ -26,9 +26,9 @@ if [ ${#CONFIG_FILES[@]} -eq 0 ]; then
 fi
 
 echo "=========================================="
-echo "Running Evaluations for First 10 Configs"
+echo "Running Evaluations for All Configs"
 echo "=========================================="
-echo "Found ${#CONFIG_FILES[@]} config files (first 10)"
+echo "Found ${#CONFIG_FILES[@]} config files"
 echo "Intervals: $INTERVALS"
 echo "Device: $DEVICE"
 echo "Total jobs to submit: ${#CONFIG_FILES[@]}"
@@ -151,7 +151,7 @@ EOF
 # Track submitted jobs
 SUBMITTED_JOBS=()
 
-# Loop through the first 10 config files
+# Loop through all config files
 for config_file in "${CONFIG_FILES[@]}"; do
     config_name=$(get_config_name "$config_file")
     echo "Processing config: $config_name"
