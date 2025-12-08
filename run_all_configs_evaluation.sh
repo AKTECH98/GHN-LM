@@ -1,18 +1,43 @@
 #!/bin/bash
-# Script to run evaluations for all configs
-# This will submit SLURM jobs for each config to evaluate metrics
+# Script to submit SLURM jobs for evaluation of all configs with all init methods
+# This will submit individual SLURM jobs for each benchmark config
 #
-# Usage: ./run_all_configs_evaluation.sh [INTERVALS] [DEVICE]
-#   INTERVALS: Comma-separated epochs for perplexity extraction (default: "1,2,5,10,20,50")
-#   DEVICE: Device to use for evaluation (default: "cuda")
+# Usage: 
+#   ./run_all_configs_evaluation.sh                    # Submit jobs for all configs
+#   ./run_all_configs_evaluation.sh --device cpu       # Use CPU instead of CUDA
+#   ./run_all_configs_evaluation.sh --init_methods default,GHN-I  # Evaluate specific init methods
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Get optional parameters
-INTERVALS=${1:-"1,2,5,10,20,50"}
-DEVICE=${2:-"cuda"}
+# Default parameters
+DEVICE="cuda"
+INIT_METHODS="default,GHN-I,GHN-T"
+OUTPUT_DIR="Evaluations"
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --device)
+            DEVICE="$2"
+            shift 2
+            ;;
+        --init_methods)
+            INIT_METHODS="$2"
+            shift 2
+            ;;
+        --output)
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--device DEVICE] [--init_methods METHODS] [--output DIR]"
+            exit 1
+            ;;
+    esac
+done
 
 # Config directory
 CONFIG_DIR="LM/configs"
@@ -26,48 +51,51 @@ if [ ${#CONFIG_FILES[@]} -eq 0 ]; then
 fi
 
 echo "=========================================="
-echo "Running Evaluations for All Configs"
+echo "Submitting Evaluation Jobs for All Configs"
 echo "=========================================="
 echo "Found ${#CONFIG_FILES[@]} config files"
-echo "Intervals: $INTERVALS"
+echo "Init methods: $INIT_METHODS"
 echo "Device: $DEVICE"
+echo "Output directory: $OUTPUT_DIR"
 echo "Total jobs to submit: ${#CONFIG_FILES[@]}"
 echo "=========================================="
 echo ""
 
-# Function to extract config number and name from file path
-# e.g., "LM/configs/benchmark_1_tiny.yaml" -> "1_tiny"
-get_config_name() {
+# Function to extract config number from file path
+# e.g., "LM/configs/benchmark_1.yaml" -> "1"
+get_config_num() {
     local config_file="$1"
     local basename=$(basename "$config_file" .yaml)
-    # Remove "benchmark_" prefix
+    # Extract number from "benchmark_N"
     echo "${basename#benchmark_}"
 }
 
 # Function to generate job name for evaluation
-# e.g., "1_tiny" -> "Eval_1_tiny"
+# e.g., "1" -> "Eval_1"
 get_job_name() {
-    local config_name="$1"
-    echo "Eval_${config_name}"
+    local config_num="$1"
+    echo "Eval_${config_num}"
 }
 
 # Function to submit a job
 submit_job() {
     local config_file="$1"
-    local job_name="$2"
-    local intervals="$3"
+    local config_num="$2"
+    local job_name="$3"
     local device="$4"
+    local init_methods="$5"
+    local output_dir="$6"
     
     # Create a temporary script for this specific job
     local temp_script=$(mktemp)
     
-    # Base script template (similar to evaluate_metrics.sh)
+    # Base script template
     cat > "$temp_script" <<EOF
 #!/bin/bash -l
 #SBATCH --job-name=${job_name}
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
-#SBATCH --comment="Language Model Metrics Evaluation"
+#SBATCH --comment="Evaluation of Benchmark Config ${config_num}"
 #SBATCH --mail-user=slack:@ak3748
 #SBATCH --mail-type=BEGIN,END
 #SBATCH --gres=gpu:a100:1
@@ -75,7 +103,7 @@ submit_job() {
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=16g
+#SBATCH --mem=32g
 
 # Extract job name from SLURM_JOB_NAME or use default
 JOB_NAME=\${SLURM_JOB_NAME}
@@ -98,14 +126,16 @@ LOG_FILE="\$LOG_DIR/\${JOB_TAG}.log"
 exec > >(tee -a "\$OUT_FILE" | tee -a "\$LOG_FILE")
 exec 2> >(tee -a "\$ERR_FILE" | tee -a "\$LOG_FILE" >&2)
 
-echo "Starting Language Model Metrics Evaluation"
+echo "Starting Evaluation for Benchmark Config ${config_num}"
 echo "=========================================="
 echo "Job ID: \$JOB_ID"
 echo "Node: \$NODE"
 echo "Time: \$(date)"
 echo "Config: ${config_file}"
-echo "Intervals: ${intervals}"
+echo "Config Num: ${config_num}"
+echo "Init Methods: ${init_methods}"
 echo "Device: ${device}"
+echo "Output Dir: ${output_dir}"
 echo "=========================================="
 
 export PYTHONPATH=\$PYTHONPATH:./
@@ -113,34 +143,47 @@ source venv/bin/activate
 
 echo "Virtual environment activated"
 
-# Configuration file
+# Configuration
 CONFIG_FILE="${config_file}"
-INTERVALS="${intervals}"
+INIT_METHODS="${init_methods}"
 DEVICE="${device}"
+OUTPUT_DIR="${output_dir}"
 
 # Check if config file exists
 if [ -f "\$CONFIG_FILE" ]; then
     echo "Using config file: \$CONFIG_FILE"
-    echo "Intervals: \$INTERVALS"
+    echo "Init methods: \$INIT_METHODS"
     echo "Device: \$DEVICE"
     echo "=========================================="
     
-    python evaluate_metrics.py \
-        --config "\$CONFIG_FILE" \
-        --intervals "\$INTERVALS" \
-        --device "\$DEVICE"
+    python evaluate_init_methods.py \\
+        --config "\$CONFIG_FILE" \\
+        --init_methods "\$INIT_METHODS" \\
+        --device "\$DEVICE" \\
+        --output_dir "\$OUTPUT_DIR"
     
+    EXIT_CODE=\$?
+    
+    if [ \$EXIT_CODE -eq 0 ]; then
+        echo ""
+        echo "✅ Evaluation completed successfully!"
+        echo "Results saved to: \$OUTPUT_DIR/"
+    else
+        echo ""
+        echo "❌ Evaluation failed with exit code: \$EXIT_CODE"
+    fi
 else
     echo "❌ Error: Config file not found: \$CONFIG_FILE"
     exit 1
 fi
 
 echo "Job finished at \$(date)"
+exit \$EXIT_CODE
 EOF
 
     # Submit the job
     local job_id=$(sbatch "$temp_script" | awk '{print $4}')
-    echo "  ✅ Submitted job $job_id: $job_name"
+    echo "  ✅ Submitted job $job_id: $job_name (Config #$config_num)"
     
     # Clean up temp script
     rm "$temp_script"
@@ -148,34 +191,38 @@ EOF
     return 0
 }
 
-# Track submitted jobs
-SUBMITTED_JOBS=()
+# Submit jobs for all configs
+SUBMITTED_COUNT=0
 
-# Loop through all config files
 for config_file in "${CONFIG_FILES[@]}"; do
-    config_name=$(get_config_name "$config_file")
-    echo "Processing config: $config_name"
+    config_num=$(get_config_num "$config_file")
+    config_name=$(basename "$config_file" .yaml)
+    job_name=$(get_job_name "$config_num")
     
-    # Submit evaluation job
-    job_name=$(get_job_name "$config_name")
-    submit_job "$config_file" "$job_name" "$INTERVALS" "$DEVICE"
-    SUBMITTED_JOBS+=("$job_name")
-    
-    echo ""
+    if submit_job "$config_file" "$config_num" "$job_name" "$DEVICE" "$INIT_METHODS" "$OUTPUT_DIR"; then
+        ((SUBMITTED_COUNT++))
+    else
+        echo "  ❌ Failed to submit job for $config_name"
+    fi
 done
 
-echo "=========================================="
-echo "Summary"
-echo "=========================================="
-echo "Total jobs submitted: ${#SUBMITTED_JOBS[@]}"
-echo "Intervals: $INTERVALS"
-echo "Device: $DEVICE"
+# Print summary
 echo ""
-echo "Submitted jobs:"
-for job_name in "${SUBMITTED_JOBS[@]}"; do
-    echo "  - $job_name"
-done
-echo ""
-echo "Check job status with: squeue -u \$USER"
 echo "=========================================="
+echo "Job Submission Summary"
+echo "=========================================="
+echo "Total configs: ${#CONFIG_FILES[@]}"
+echo "Successfully submitted: $SUBMITTED_COUNT"
+echo ""
+echo "Monitor jobs with: squeue -u \$USER"
+echo "Check logs in: logs/"
+echo "Results will be saved to: $OUTPUT_DIR/"
+echo ""
 
+if [ $SUBMITTED_COUNT -eq ${#CONFIG_FILES[@]} ]; then
+    echo "🎉 All jobs submitted successfully!"
+    exit 0
+else
+    echo "⚠️  Some job submissions failed."
+    exit 1
+fi

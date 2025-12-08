@@ -95,7 +95,7 @@ def build_wikitext2(
     train_loader = DataLoader(
         lm_ds["train"],
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=False,  # Disable shuffle for deterministic training and proper resuming
         num_workers=num_workers,
         pin_memory=torch.cuda.is_available(),
         collate_fn=_collate_wikitext2,

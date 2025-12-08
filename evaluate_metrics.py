@@ -59,12 +59,10 @@ def find_experiment_dirs_by_init_method(config_name: str) -> Dict[str, Path]:
     else:
         base_name = config_name_lower
     
-    # Search all patterns for the four categories
+    # Search all patterns for the two categories
     patterns = {
-        "Benchmark_": f"Benchmark_{base_name}*",
-        "Benchmark_16__": f"Benchmark_16__{base_name}*",
-        "GHN-I_16-2_": f"GHN-I_16-2_{base_name}*",
-        "GHN-I_64-2_": f"GHN-I_64-2_{base_name}*"
+        "GHN-I-MultiGPU-64_": f"GHN-I-MultiGPU_{base_name}*",
+        "Mini_GPT_64__": f"Mini_GPT_64__{base_name}*"
     }
     
     results = {}
@@ -140,14 +138,10 @@ class MetricsEvaluator:
         
         # Detect category from experiment directory name
         exp_name = self.experiment_dir.name
-        if exp_name.startswith("GHN-I_64-2_"):
-            self.init_method = "GHN-I_64-2_"
-        elif exp_name.startswith("GHN-I_16-2_"):
-            self.init_method = "GHN-I_16-2_"
-        elif exp_name.startswith("Benchmark_16__"):
-            self.init_method = "Benchmark_16__"
-        elif exp_name.startswith("Benchmark_"):
-            self.init_method = "Benchmark_"
+        if exp_name.startswith("GHN-I-MultiGPU_"):
+            self.init_method = "GHN-I-MultiGPU_"
+        elif exp_name.startswith("Mini_GPT_64__"):
+            self.init_method = "Mini_GPT_64__"
         else:
             self.init_method = "unknown"
     
@@ -667,10 +661,10 @@ def main():
     
     # Print comparison table for perplexity at intervals
     print("Perplexity at Intervals:")
-    categories = ["Benchmark_", "Benchmark_16__", "GHN-I_16-2_", "GHN-I_64-2_"]
-    header = f"{'Epoch':<8} " + " ".join([f"{cat:<15}" for cat in categories])
+    categories = ["GHN-I-MultiGPU_", "Mini_GPT_64__"]
+    header = f"{'Epoch':<8} " + " ".join([f"{cat:<25}" for cat in categories])
     print(header)
-    print("-" * 75)
+    print("-" * 65)
     
     # Get all epochs from all results
     all_epochs = set()
@@ -697,23 +691,23 @@ def main():
     
     # Print convergence comparison
     print(f"\nConvergence:")
-    print(f"{'Category':<20} {'Converged':<12} {'Epoch':<8} {'Perplexity':<12}")
-    print("-" * 55)
+    print(f"{'Category':<25} {'Converged':<12} {'Epoch':<8} {'Perplexity':<12}")
+    print("-" * 60)
     for category in categories:
         if category in all_results:
             conv = all_results[category]['convergence']
             epoch_str = str(conv['convergence_epoch']) if conv['convergence_epoch'] is not None else "N/A"
             perplexity_str = f"{conv['convergence_perplexity']:.2f}" if conv['convergence_perplexity'] is not None else "N/A"
-            print(f"{category:<20} {str(conv['converged']):<12} {epoch_str:<8} {perplexity_str:<12}")
+            print(f"{category:<25} {str(conv['converged']):<12} {epoch_str:<8} {perplexity_str:<12}")
     
     # Print test evaluation comparison
     print(f"\nTest Evaluation:")
-    print(f"{'Category':<20} {'Test Loss':<12} {'Test Perplexity':<15}")
-    print("-" * 50)
+    print(f"{'Category':<25} {'Test Loss':<12} {'Test Perplexity':<15}")
+    print("-" * 55)
     for category in categories:
         if category in all_results:
             test = all_results[category]['test_evaluation']
-            print(f"{category:<20} {test['test_loss']:.4f}      {test['test_perplexity']:.2f}")
+            print(f"{category:<25} {test['test_loss']:.4f}      {test['test_perplexity']:.2f}")
     
     # Save combined results in Evaluations folder
     evaluations_dir = Path("Evaluations")

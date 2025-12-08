@@ -130,6 +130,7 @@ def main():
         num_workers=args.num_workers,
         ve_cutoff=args.virtual_edges,
         dense=True,  # GHN-3 requires dense graphs
+        shuffle=False,  # Disable shuffle for deterministic training and proper resuming
         exclude_embeddings=not args.include_embeddings,  # Convert include_embeddings to exclude_embeddings
         max_d_model=args.max_d_model,
         max_layers=args.max_layers
@@ -247,8 +248,47 @@ def main():
     log('Note: Perplexity overflow protection implemented - loss clamped to max 10.0 to prevent exp() overflow')
     log('Note: Additional stability fixes: reduced grad_clip, reduced predparam_wd, improved AMP settings')
     
-    # Initialize iterators
+    # Initialize iterators and track meta_batch position
     graphs_queue = iter(graphs_queue)
+    
+    # Track meta_batch index for resuming (which architecture batch we're on within current epoch)
+    # Calculate total number of meta batches
+    total_meta_batches = len(arch_loader)
+    
+    # Initialize meta_batch index from checkpoint if resuming in the same epoch
+    start_meta_batch = 0
+    checkpoint_epoch = -1
+    if trainer.start_epoch > 0 or trainer.start_step > 0:
+        # Load checkpoint to get meta_batch info - use same logic as Trainer
+        checkpoint_path = None
+        if args.ckpt and os.path.exists(args.ckpt):
+            checkpoint_path = args.ckpt
+        elif os.path.exists(os.path.join(job_experiment_dir, 'checkpoint.pt')):
+            checkpoint_path = os.path.join(job_experiment_dir, 'checkpoint.pt')
+        
+        if checkpoint_path and os.path.exists(checkpoint_path):
+            checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+            checkpoint_epoch = checkpoint.get('epoch', -1)
+            # Only use saved meta_batch if we're resuming in the same epoch
+            if checkpoint_epoch == trainer.start_epoch:
+                start_meta_batch = checkpoint.get('meta_batch', 0)
+                log(f'Resuming from epoch {trainer.start_epoch}, step {trainer.start_step}, meta_batch {start_meta_batch}')
+            else:
+                log(f'Starting new epoch {trainer.start_epoch} (checkpoint was at epoch {checkpoint_epoch}), meta_batch will reset')
+    
+    # Skip to the correct meta_batch position if resuming in the same epoch
+    current_meta_batch = 0
+    if start_meta_batch > 0 and checkpoint_epoch == trainer.start_epoch:
+        graphs_queue = iter(arch_loader)
+        for _ in range(start_meta_batch):
+            try:
+                next(graphs_queue)
+                current_meta_batch += 1
+            except StopIteration:
+                graphs_queue = iter(arch_loader)
+                current_meta_batch = 0
+                break
+        log(f'Skipped to meta_batch {current_meta_batch}')
     
     # Track best metrics for saving best model
     best_loss = float('inf')
@@ -261,6 +301,20 @@ def main():
         log('\nepoch={:03d}/{:03d}, lr={:e}'.format(epoch + 1, args.epochs, trainer.get_lr()))
 
         trainer.reset_metrics(epoch)
+        
+        # Reset meta_batch tracking at the start of each new epoch (not the epoch we're resuming from)
+        if epoch > trainer.start_epoch:
+            # Starting a completely new epoch, reset the iterator and meta_batch counter
+            graphs_queue = iter(arch_loader)
+            current_meta_batch = 0
+            log(f'Starting new epoch {epoch + 1}, resetting architecture iterator')
+        elif epoch == trainer.start_epoch and trainer.start_step == 0:
+            # Starting from the beginning of the epoch we're resuming from
+            # Only reset if we don't have a checkpoint for this epoch, or if checkpoint is from a different epoch
+            if checkpoint_epoch != epoch:
+                graphs_queue = iter(arch_loader)
+                current_meta_batch = 0
+                log(f'Starting epoch {epoch + 1} from beginning (no checkpoint for this epoch)')
 
         for step, token_batch in enumerate(train_queue, start=trainer.start_step):
             if step >= len(train_queue):  # if we resume training from some start_step > 0, then need to break the loop
@@ -273,9 +327,12 @@ def main():
             # Get next batch of model architectures
             try:
                 models, graph_batch, metas = next(graphs_queue)
+                current_meta_batch += 1
             except StopIteration:
+                # Reset iterator for new epoch
                 graphs_queue = iter(arch_loader)
                 models, graph_batch, metas = next(graphs_queue)
+                current_meta_batch = 1  # Reset to 1 after consuming first batch of new epoch
 
             # Move models to GPU if they were created on CPU (for multiprocessing workers)
             # This avoids CUDA OOM in worker processes
@@ -316,7 +373,7 @@ def main():
                 tensorboard_writer.add_scalar('Train/Epoch', epoch, global_step)
 
             if args.save:
-                trainer.save(epoch, step, {'args': args, 'config': config}, interm_epoch=args.interm_epoch)
+                trainer.save(epoch, step, {'args': args, 'config': config, 'meta_batch': current_meta_batch}, interm_epoch=args.interm_epoch)
                 
                 # Save best model based on loss
                 current_loss = trainer.metrics['loss'].avg
@@ -331,6 +388,7 @@ def main():
                         'optimizer': trainer._optimizer.state_dict(),
                         'epoch': epoch,
                         'step': step,
+                        'meta_batch': current_meta_batch,
                         'loss': current_loss,
                         'perplexity': current_perplexity,
                         'args': args,

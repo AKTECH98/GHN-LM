@@ -62,7 +62,7 @@ get_config_name() {
 # e.g., "1_tiny" -> "GHN-I_1_tiny"
 get_experiment_name() {
     local config_name="$1"
-    echo "GHN-I_${config_name}"
+    echo "GHN-T-init_${config_name}"
 }
 
 # Function to submit a job
