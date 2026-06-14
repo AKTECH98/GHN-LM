@@ -30,7 +30,10 @@ LOG_FILE="$LOG_DIR/${JOB_TAG}.log"
 exec > >(tee -a "$OUT_FILE" | tee -a "$LOG_FILE")
 exec 2> >(tee -a "$ERR_FILE" | tee -a "$LOG_FILE" >&2)
 
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 source venv/bin/activate
+pip install -e . -q
 
 echo "Starting GHN-3 Language Model Training with GHN Initialization"
 echo "=============================================================="
@@ -47,18 +50,17 @@ echo "=============================================================="
 
 echo "All required files present"
 
-export PYTHONPATH=$PYTHONPATH:./
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # Configuration
-CONFIG="LM/configs/benchmark_10_mini_gpt_xl.yaml"  # Change this to your desired config
+CONFIG="configs/benchmarks/benchmark_10_mini_gpt_xl.yaml"  # Change this to your desired config
 GHN_CHECKPOINT="Experiment/GHN-I-MultiGPU-32Batch-120layers/best_model.pt"  # Change this to your GHN checkpoint
 
 echo "Configuration: $CONFIG"
 echo "GHN Checkpoint: $GHN_CHECKPOINT"
 
 # Run GHN-initialized training
-python train_lm.py \
+python scripts/train_lm.py \
     --config "$CONFIG" \
     --init_method ghn \
     --ghn_checkpoint "$GHN_CHECKPOINT" \

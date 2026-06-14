@@ -9,10 +9,10 @@ Supports multiple initialization methods:
 - ghn: GHN-predicted initialization
 
 Usage:
-    python train_lm.py --config LM/configs/benchmark_1_tiny.yaml
-    python train_lm.py --config LM/configs/benchmark_2_small.yaml --init_method he
-    python train_lm.py --config LM/configs/benchmark_2_small.yaml --init_method ghn --ghn_checkpoint Experiment/20917896/best_model.pt
-    python train_lm.py --list_configs
+    python scripts/train_lm.py --config configs/benchmarks/benchmark_1_tiny.yaml
+    python scripts/train_lm.py --config configs/benchmarks/benchmark_2_small.yaml --init_method he
+    python scripts/train_lm.py --config configs/benchmarks/benchmark_2_small.yaml --init_method ghn --ghn_checkpoint GHN_Models/20917896.pt
+    python scripts/train_lm.py --list_configs
 """
 
 import argparse
@@ -22,10 +22,11 @@ import time
 import torch
 import torch.nn as nn
 
-from LM import Trainer
-from LM.create_model import create_model
-from Dataloader.wikitext2_loader import build_wikitext2
-from Dataloader.config_loader import load_config_file, list_benchmark_configs
+from capstone.lm import Trainer
+from capstone.lm.create_model import create_model
+from capstone.data.wikitext2_loader import build_wikitext2
+from capstone.data.config_loader import load_config_file, list_benchmark_configs
+from capstone.paths import DATA_DIR
 
 
 def initialize_with_he(model):
@@ -183,7 +184,7 @@ def main():
     if args.init_method == "ghn":
         print(f"\n🤖 Loading GHN model from: {args.ghn_checkpoint}")
         try:
-            from GHN import from_pretrained
+            from capstone.ghn import from_pretrained
             ghn = from_pretrained(args.ghn_checkpoint, debug_level=0).to(device)
             print(f"   GHN parameters: {sum(p.numel() for p in ghn.parameters()):,}")
         except Exception as e:
@@ -197,7 +198,7 @@ def main():
         seq_len=data_config.seq_len,
         batch_size=training_config.batch_size,
         num_workers=data_config.num_workers,
-        cache_dir="./data"
+        cache_dir=str(DATA_DIR)
     )
     
     print(f"   Vocab size: {data['vocab_size']}")
@@ -226,7 +227,8 @@ def main():
         device=device,
         training_config=training_config,
         model_config=model_config,
-        data_config=data_config
+        data_config=data_config,
+        init_method=args.init_method,
     )
     
     # Save GHN-initialized model if requested
@@ -242,8 +244,7 @@ def main():
     # Update config with actual vocab size
     trainer.update_config_vocab_size(data['vocab_size'])
     
-    # Add initialization info to trainer
-    trainer.init_method = args.init_method
+    # Add GHN initialization metadata to trainer
     if args.init_method == "ghn":
         trainer.ghn_initialized = True
         trainer.ghn_checkpoint = args.ghn_checkpoint

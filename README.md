@@ -1,106 +1,93 @@
 # GHN-3 for Language Models
 
-This project contains adapted Graph HyperNetwork (GHN-3) implementations for both computer vision and language model training.
+Graph HyperNetwork (GHN-3) training and evaluation for transformer language models on WikiText-2.
 
-## Project Structure
+This repository trains a hypernetwork to predict weights for language model architectures, then benchmarks those predictions against standard initialization methods (default, He, Xavier) across ten model scales.
 
-```
-├── ghn3/                    # Original GHN-3 for computer vision models
-│   ├── ghn3/               # Core GHN-3 implementation
-│   ├── train_ghn_ddp.py    # Training script for image models
-│   ├── eval_ghn.py         # Evaluation script
-│   └── examples/           # Example notebooks and scripts
-│
-├── lmghn3/                 # Adapted GHN-3 for language models
-│   ├── CustomGHN3/         # Core GHN-3 implementation (adapted)
-│   ├── language_models/    # Language model utilities
-│   │   ├── lm_arch_loader.py      # Architecture dataset loader
-│   │   ├── lm_architectures.py    # Curated LM architectures
-│   │   ├── wikitext2_loader.py    # WikiText-2 dataset loader
-│   │   └── tiny_lm_fixed.py       # Fixed language model (no weight tying)
-│   ├── train_ghn_ddp.py    # Training script for language models
-│   ├── eval_ghn.py         # Evaluation script
-│   └── examples/           # Example notebooks and scripts
-│
-└── venv/                   # Python virtual environment
-```
-
-## Usage
-
-### Training GHN-3 for Language Models
+## Quick start
 
 ```bash
-# Activate virtual environment
+python -m venv venv
 source venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
 
-# Train GHN-3 for language models
-python lmghn3/train_ghn_ddp.py \
-    --vocab_size 50257 \
-    --seq_len 256 \
-    --ln \
-    -e 20 \
-    --opt adamw \
-    --lr 4e-4 \
-    --wd 1e-2 \
-    -b 8 \
-    --amp \
-    -m 8 \
-    --name ghn3lm \
-    --hid 256 \
-    --scheduler cosine-warmup
+# Train a hypernetwork
+python scripts/train_ghn.py --model_name ghn3lm --epochs 20
+
+# Train a benchmark LM with GHN init
+python scripts/train_lm.py \
+  --config configs/benchmarks/benchmark_1_tiny.yaml \
+  --init_method ghn \
+  --ghn_checkpoint GHN_Models/20917896.pt
+
+# Evaluate and plot results
+python scripts/evaluate_metrics.py --all-configs --plot
+python scripts/evaluate_metrics.py --plot-all
 ```
 
-### Training GHN-3 for Computer Vision
+## Project structure
+
+```
+Capstone/
+├── pyproject.toml              # editable install (pip install -e .)
+├── requirements.txt
+├── configs/benchmarks/         # 10 benchmark YAML configs
+├── scripts/                    # CLI entry points
+│   ├── train_ghn.py
+│   ├── train_lm.py
+│   └── evaluate_metrics.py
+├── slurm/                      # cluster job wrappers
+├── docs/                       # project documentation
+├── src/capstone/               # Python package
+│   ├── paths.py                # repo-root path constants
+│   ├── ghn/                    # hypernetwork (Graphormer + decoders)
+│   ├── lm/                     # GPT encoder & Mini GPT models
+│   ├── data/                   # WikiText-2 + architecture loader
+│   └── eval/                   # metrics extraction, plotting, migration
+├── Results/                    # evaluation output (gitignored)
+├── Experiment/                 # training checkpoints (gitignored)
+├── tensor_log/                 # TensorBoard logs (gitignored)
+└── data/                       # HuggingFace dataset cache (gitignored)
+```
+
+## Workflow
+
+```
+train_ghn.py  →  GHN checkpoint in Experiment/ or GHN_Models/
+       ↓
+train_lm.py   →  Experiment/{job_id}/  (per init method)
+       ↓
+evaluate_metrics.py  →  Results/metrics/{config}.json
+       ↓
+--plot-all      →  Results/plots/*.png
+```
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [docs/training.md](docs/training.md) | GHN and LM training, init methods, SLURM |
+| [docs/evaluation.md](docs/evaluation.md) | Metrics schema, plotting, legacy migration |
+| [docs/configuration.md](docs/configuration.md) | Benchmark YAML format and model list |
+| [docs/README.md](docs/README.md) | Full documentation index |
+
+Capstone research reports in `Report/` (gitignored) and `docs/report.pdf` may exist locally as deliverables.
+
+## SLURM (RIT cluster)
 
 ```bash
-# Train GHN-3 for image models (original)
-python ghn3/train_ghn_ddp.py \
-    -d imagenet \
-    -D ./data \
-    -n -v 50 --ln \
-    -e 75 \
-    --opt adamw \
-    --lr 4e-4 \
-    --wd 1e-2 \
-    -b 128 \
-    --amp \
-    -m 8 \
-    --name ghn3tm8 \
-    --hid 64 \
-    --scheduler cosine-warmup
+sbatch slurm/train_ghn.sh
+INIT_METHOD=he sbatch slurm/train_lm.sh
+sbatch slurm/train_lm_ghn_init.sh
+sbatch slurm/evaluate_metrics.sh
+./slurm/run_first_10_configs_evaluation.sh
 ```
 
-## Key Features
-
-- **Language Model Support**: Adapted GHN-3 to work with transformer-based language models
-- **Fixed Weight Tying Issue**: Resolved parameter prediction conflicts with weight-tied layers
-- **Curated Architectures**: Pre-defined set of language model architectures for training
-- **WikiText-2 Integration**: Built-in support for WikiText-2 dataset
-- **DDP Support**: Distributed training support for both implementations
-- **Clean Training Output**: Suppressed warnings and verbose messages for clean training logs
+SLURM scripts change to the repo root, activate the venv, and run `pip install -e .` before calling `scripts/`.
 
 ## Requirements
 
 - Python 3.11+
-- PyTorch 2.8.0+
-- Transformers library
-- Datasets library
-- Other dependencies in requirements.txt
-
-## Installation
-
-```bash
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-## Notes
-
-- The `lmghn3` folder contains the language model adapted version
-- The `ghn3` folder contains the original computer vision version
-- Language model training uses fixed architectures without weight tying to avoid parameter prediction conflicts
-- Both implementations support distributed training with DDP
+- PyTorch 2.8+
+- See [requirements.txt](requirements.txt) for pinned dependencies

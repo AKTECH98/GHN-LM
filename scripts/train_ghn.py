@@ -23,9 +23,10 @@ if __name__ == '__main__':
 warnings.filterwarnings("ignore", message="networkx backend defined more than once: nx-loopback")
 
 from ppuda.config import init_config
-from GHN import GHN3, log, Trainer, setup_ddp, clean_ddp
-from Dataloader.lm_arch_loader import build_ghn_variants_dataloader
-from Dataloader.wikitext2_loader import build_wikitext2
+from capstone.ghn import GHN3, log, Trainer, setup_ddp, clean_ddp
+from capstone.data.lm_arch_loader import build_ghn_variants_dataloader
+from capstone.data.wikitext2_loader import build_wikitext2
+from capstone.paths import EXPERIMENT_DIR, TENSORLOG_DIRS
 
 log = partial(log, flush=True)
 
@@ -77,8 +78,8 @@ def main():
     job_id = args.model_name #os.environ.get('SLURM_JOB_ID', f'ghn3_lm_{int(time.time())}')
     
     # Create directory structure
-    logging_dir = 'tensor_log'
-    experiment_dir = 'Experiment'
+    logging_dir = str(TENSORLOG_DIRS[0])
+    experiment_dir = str(EXPERIMENT_DIR)
     job_experiment_dir = os.path.join(experiment_dir, job_id)
     
     # Create directories

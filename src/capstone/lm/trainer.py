@@ -14,11 +14,13 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
+from capstone.paths import EXPERIMENT_DIR, TENSORLOG_DIRS
+
 
 class Trainer:
     """Trainer class for language models."""
     
-    def __init__(self, model, train_loader, val_loader, device, args=None, training_config=None, model_config=None, data_config=None):
+    def __init__(self, model, train_loader, val_loader, device, args=None, training_config=None, model_config=None, data_config=None, init_method="default"):
         self.model = model.to(device)
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -27,14 +29,13 @@ class Trainer:
         self.training_config = training_config
         self.model_config = model_config
         self.data_config = data_config
-        
-        # Get job ID from environment or generate one (same as GHN training)
+        self.init_method = init_method
         # Check for custom job ID first (from training script), then SLURM, then generate
         self.job_id = os.environ.get('JOB_ID', os.environ.get('SLURM_JOB_ID', f'lm_{int(time.time())}'))
         
         # Create directory structure (same as GHN training)
-        self.logging_dir = 'tensor_log'
-        self.experiment_dir = 'Experiment'
+        self.logging_dir = str(TENSORLOG_DIRS[0])
+        self.experiment_dir = str(EXPERIMENT_DIR)
         self.job_experiment_dir = os.path.join(self.experiment_dir, self.job_id)
         
         # Create directories
@@ -92,6 +93,7 @@ class Trainer:
             # Create config in the same structure as input YAML files
             experiment_config = {
                 "job_id": self.job_id,
+                "init_method": self.init_method,
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "model": {
                     "model_type": model_config.model_type,

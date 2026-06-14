@@ -33,7 +33,10 @@ LOG_FILE="$LOG_DIR/${JOB_TAG}.log"
 exec > >(tee -a "$OUT_FILE" | tee -a "$LOG_FILE")
 exec 2> >(tee -a "$ERR_FILE" | tee -a "$LOG_FILE" >&2)
 
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 source venv/bin/activate
+pip install -e . -q
 
 echo "Starting GHN-3 Language Model Training"
 echo "======================================"
@@ -50,12 +53,11 @@ echo "======================================"
 
 echo "All required files present"
 
-export PYTHONPATH=$PYTHONPATH:./
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # Run GHN-3 training with enhanced features
 # Using the updated train_ghn.py script with organized config structure
-python train_ghn.py \
+python scripts/train_ghn.py \
     --model_name "GHN-I-64-2-noAMP" \
     --heads 2\
     --layers 3 \

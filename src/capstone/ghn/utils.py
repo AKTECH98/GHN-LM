@@ -12,10 +12,8 @@ Utils.
 
 import os
 import time
-import math
 import psutil
 import torch
-import torchvision.transforms as transforms
 from .ddp_utils import get_ddp_rank
 
 
@@ -94,49 +92,3 @@ def print_grads(model, verbose=True):
         total_grad_norm.item(),
         total_norm.item()))
     return
-
-
-def transforms_imagenet(noise=False, im_size=224, timm_aug=False):
-    """
-    This is the same code as in https://github.com/facebookresearch/ppuda/blob/main/ppuda/vision/transforms.py#L88,
-    but without ColorJitter to more closely reproduce ResNet-50 training results.
-    :param noise:
-    :param im_size:
-    :param timm_aug: add RandAugment and test crop ratio=0.95 based on
-    "ResNet strikes back: An improved training procedure in timm" (https://arxiv.org/abs/2110.00476)
-    :return:
-    """
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
-    train_transform = [
-        transforms.RandomResizedCrop(im_size),
-        transforms.RandomHorizontalFlip(),
-    ]
-
-    if timm_aug:
-        import timm
-        train_transform.append(timm.data.auto_augment.rand_augment_transform('rand-m6'))
-
-    train_transform.extend([
-        transforms.ToTensor(),
-        normalize
-    ])
-
-    train_transform = transforms.Compose(train_transform)
-
-    valid_transform = [
-        transforms.Resize((32, 32) if im_size == 32 else
-                          (math.floor(im_size / 0.95) if timm_aug else max(im_size, 256))),
-        transforms.CenterCrop(max(im_size, 224)),
-        transforms.ToTensor(),
-        normalize
-    ]
-    if im_size == 32:
-        del valid_transform[1]
-    if noise:
-        raise NotImplementedError('This transform is not expected during training. '
-                                  'Use ppuda.vision.transforms.transforms_imagenet for evaluation on noisy images.')
-
-    valid_transform = transforms.Compose(valid_transform)
-
-    return train_transform, valid_transform

@@ -41,6 +41,7 @@ Analysis/
 Report/
 
 # Plots and visualizations
+Results/
 Evaluations/
 GHN_Models/
 ckpts/

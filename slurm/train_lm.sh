@@ -1,8 +1,8 @@
 #!/bin/bash -l
-#SBATCH --job-name=BenchmarkHEInit_10_mini_gpt_xl
+#SBATCH --job-name=Benchmark_10_mini_gpt_xl
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
-#SBATCH --comment="Language Model Training with He Initialization"
+#SBATCH --comment="Language Model Training"
 #SBATCH --mail-user=slack:@ak3748       # Slack username to notify
 #SBATCH --mail-type=BEGIN,END
 #SBATCH --gres=gpu:a100:1
@@ -33,21 +33,23 @@ LOG_FILE="$LOG_DIR/${JOB_TAG}.log"
 exec > >(tee -a "$OUT_FILE" | tee -a "$LOG_FILE")
 exec 2> >(tee -a "$ERR_FILE" | tee -a "$LOG_FILE" >&2)
 
-echo "Starting Language Model Training with He Initialization"
-echo "======================================================"
+echo "Starting Language Model Training"
+echo "================================"
 echo "Job ID: $JOB_ID"
 echo "Node: $NODE"
 echo "Time: $(date)"
 echo "DIR:$(dirname "$0")"
 echo "Working Directory: $(pwd)"
-echo "======================================================"
+echo "================================"
 
 # module load cuda/11.7
 
 echo "All required files present"
 
-export PYTHONPATH=$PYTHONPATH:./
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 source venv/bin/activate
+pip install -e . -q
 
 echo "Virtual environment activated"
 # ===========================================
@@ -55,31 +57,40 @@ echo "Virtual environment activated"
 # ===========================================
 
 # Configuration file to use
-CONFIG_FILE="LM/configs/benchmark_10_mini_gpt_xl.yaml"  # Change to desired config
+CONFIG_FILE="configs/benchmarks/benchmark_10_mini_gpt_xl.yaml"  # Change to desired config
 
 # ===========================================
 # TRAINING COMMAND
 # ===========================================
 
-# Set initialization method to He
-INIT_METHOD=he
+# Initialization method (default, he, xavier, or ghn)
+INIT_METHOD=${INIT_METHOD:-default}
+GHN_CHECKPOINT=${GHN_CHECKPOINT:-}
 
 # Check if config file exists
 if [ -f "$CONFIG_FILE" ]; then
     echo "Using config file: $CONFIG_FILE"
-    echo "Initialization method: He (Kaiming)"
-    echo "======================================================"
+    echo "Initialization method: $INIT_METHOD"
+    echo "================================"
     
-    python train_lm.py --config "$CONFIG_FILE" --init_method "$INIT_METHOD"
+    # Build command based on init method
+    if [ "$INIT_METHOD" = "ghn" ]; then
+        if [ -z "$GHN_CHECKPOINT" ]; then
+            echo "❌ Error: GHN_CHECKPOINT must be set when INIT_METHOD=ghn"
+            exit 1
+        fi
+        python scripts/train_lm.py --config "$CONFIG_FILE" --init_method "$INIT_METHOD" --ghn_checkpoint "$GHN_CHECKPOINT"
+    else
+        python scripts/train_lm.py --config "$CONFIG_FILE" --init_method "$INIT_METHOD"
+    fi
     
 else
     echo "❌ Error: Config file not found: $CONFIG_FILE"
     echo "Available config files:"
-    ls -la LM/configs/benchmark_*.yaml 2>/dev/null || echo "  No config files found in LM/configs/"
+    ls -la configs/benchmarks/benchmark_*.yaml 2>/dev/null || echo "  No config files found in configs/benchmarks/"
     echo ""
     echo "Please set CONFIG_FILE to a valid config file path"
     exit 1
 fi
 
 echo "Job finished at $(date)"
-

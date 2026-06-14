@@ -41,14 +41,17 @@ echo "Time: $(date)"
 echo "DIR: $(dirname "$0")"
 echo "Working Directory: $(pwd)"
 echo "Evaluation Script: evaluate_metrics.py"
+echo "Results Directory: Results/"
 echo "=========================================="
 
 # module load cuda/11.7
 
 echo "All required files present"
 
-export PYTHONPATH=$PYTHONPATH:./
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 source venv/bin/activate
+pip install -e . -q
 
 echo "Virtual environment activated"
 
@@ -57,7 +60,7 @@ echo "Virtual environment activated"
 # ===========================================
 
 # Configuration file to use
-CONFIG_FILE=${CONFIG_FILE:-"LM/configs/benchmark_1_tiny.yaml"}  # Change to desired config
+CONFIG_FILE=${CONFIG_FILE:-"configs/benchmarks/benchmark_1_tiny.yaml"}  # Change to desired config
 
 # Intervals for perplexity extraction (comma-separated epochs)
 INTERVALS=${INTERVALS:-"1,2,5,10,20,50"}
@@ -76,15 +79,17 @@ if [ -f "$CONFIG_FILE" ]; then
     echo "Device: $DEVICE"
     echo "=========================================="
     
-    python evaluate_metrics.py \
+    python scripts/evaluate_metrics.py \
         --config "$CONFIG_FILE" \
         --intervals "$INTERVALS" \
-        --device "$DEVICE"
+        --device "$DEVICE" \
+        --output-dir Results \
+        --plot
     
 else
     echo "❌ Error: Config file not found: $CONFIG_FILE"
     echo "Available config files:"
-    ls -la LM/configs/benchmark_*.yaml 2>/dev/null || echo "  No config files found in LM/configs/"
+    ls -la configs/benchmarks/benchmark_*.yaml 2>/dev/null || echo "  No config files found in configs/benchmarks/"
     echo ""
     echo "Please set CONFIG_FILE to a valid config file path"
     exit 1
