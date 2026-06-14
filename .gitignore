@@ -22,7 +22,7 @@ env/
 
 # Project specific
 checkpoints/
-data/
+/data/
 logs/
 runs/
 *.out

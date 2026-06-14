@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=Benchmark_10_mini_gpt_xl
+#SBATCH --job-name=Benchmark_Mini_GPT_9
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
 #SBATCH --comment="Language Model Training"

@@ -1,18 +1,18 @@
 # Benchmark 3: Mini GPT Model Configuration
-# ~16.2M parameters - NOT in GHN training dataset (for evaluation)
+# ~10.8M parameters - NOT in GHN training dataset (for evaluation)
 
 model:
   model_type: "mini_gpt"
   vocab_size: 50257
-  d_model: 128
-  n_layer: 8
-  n_head: 1
-  d_ff: 1280
-  max_seq_len: 1024
+  d_model: 144
+  n_layer: 10
+  n_head: 6
+  d_ff: 576
+  max_seq_len: 64
   p_drop: 0.1
 
 training:
-  epochs: 100
+  epochs: 180
   batch_size: 32
   learning_rate: 0.0003
   weight_decay: 0.01
@@ -29,5 +29,5 @@ training:
   early_stopping_min_delta: 0.001
 
 data:
-  seq_len: 1024
-  num_workers: 4
+  seq_len: 64
+  num_workers: 1

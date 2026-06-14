@@ -10,7 +10,7 @@ cd "$SCRIPT_DIR"
 CONFIG_DIR="LM/configs"
 
 # Experiment base name (change this to customize experiment names)
-EXPERIMENT_BASE_NAME="Mini_GPT"
+EXPERIMENT_BASE_NAME="Mini_GPT_64_"
 
 # Find all benchmark config files
 CONFIG_FILES=($(ls -1 "$CONFIG_DIR"/benchmark_*.yaml 2>/dev/null | sort))

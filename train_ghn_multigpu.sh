@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --job-name=GHN-I-MultiGPU-Final
+#SBATCH --job-name=GHN-I
 #SBATCH --account=nlagent
 #SBATCH --partition=debug
 #SBATCH --comment="GHN-3 Language Model Training with Multiple GPUs (DDP)"
@@ -20,13 +20,13 @@
 NUM_GPUS=${SLURM_GPUS:-2}  # Default to 4, or use SLURM_GPUS if set
 
 # Training configuration
-MODEL_NAME="GHN-I-MultiGPU-Final"
+MODEL_NAME="GHN-I"
 HEADS=2
 LAYERS=3
 SEQ_LEN=64
 INTERM_EPOCH=5
-EPOCHS=180              
-BATCH_SIZE=16              # WikiText-2 batch size per GPU
+EPOCHS=800              
+BATCH_SIZE=64              # WikiText-2 batch size per GPU
 META_BATCH_SIZE=2        # Total models across all GPUs (will be split evenly)
 LR=0.0004
 WD=0.01
@@ -39,10 +39,10 @@ HYPERNET="gatedgnn"
 DECODER="conv"
 MAX_SHAPE="1024,1024,1,1"  # Reduced from 1024,1024,1,1 to save memory
 
-# Model filtering (for ~100K models)
+# Model filtering (for ~140K models)
 INCLUDE_EMBEDDINGS=true  # Set to true to include embeddings (uses more memory)
-MAX_D_MODEL=1024         # Maximum d_model for GPT Encoder/Mini GPT variants (~100K models)
-MAX_LAYERS=30            # Maximum layers for GPT Encoder/Mini GPT variants (~100K models)
+MAX_D_MODEL=2048         # Maximum d_model for GPT Encoder/Mini GPT variants (~140K models)
+MAX_LAYERS=30            # Maximum layers for GPT Encoder/Mini GPT variants (~140K models)
 
 # =============================================================================
 # Job Setup
@@ -164,6 +164,7 @@ fi
 if [ -n "$MAX_LAYERS" ]; then
     TRAIN_ARGS+=(--max_layers "$MAX_LAYERS")
 fi
+
 
 # Run GHN-3 training with torchrun for multi-GPU DDP
 # torchrun automatically sets up DDP with environment variables

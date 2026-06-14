@@ -106,41 +106,30 @@ class Trainer:
         self.checkpoint_path = os.path.join(save_dir, 'checkpoint.pt') if save_dir else None
         if ckpt is not None or (self.checkpoint_path is not None and os.path.exists(self.checkpoint_path)):
             # Load model parameters from existing checkpoint
-            if self.checkpoint_path is not None and os.path.exists(self.checkpoint_path):
+            if ckpt is not None and os.path.exists(ckpt):
+                # Use explicitly provided checkpoint
+                ckpt_path = ckpt
+            elif self.checkpoint_path is not None and os.path.exists(self.checkpoint_path):
                 # loads from save dir even if args.ckpt is specified
-                ckpt = self.checkpoint_path
-                log(f'Found existing checkpoint {ckpt} in the experiment directory {save_dir}.')
-
-                log(f'Loading checkpoint from {ckpt}.')
+                ckpt_path = self.checkpoint_path
+                log(f'Found existing checkpoint {ckpt_path} in the experiment directory {save_dir}.')
+            else:
+                ckpt_path = None
+            
+            if ckpt_path is not None:
+                log(f'Loading checkpoint from {ckpt_path}.')
                 if self.ddp:
                     dist.barrier()  # make sure that all processes load the model before optimizing it
                     map_location = {'cuda:%d' % 0: device}
                 else:
                     map_location = self.rank
-                state_dict = torch.load(ckpt, map_location=map_location, weights_only=False)
+                state_dict = torch.load(ckpt_path, map_location=map_location, weights_only=False)
                 model.load_state_dict(state_dict['state_dict'])
                 self.start_epoch = state_dict['epoch']
                 self.start_step = state_dict['step']
                 log('Model with {} parameters loaded from epoch {}, step {}.'.format(capacity(model)[1],
                                                                                      self.start_epoch,
                                                                                      self.start_step))
-            else:
-                # Load checkpoint state dict into the existing model (GHN)
-                log(f'Loading checkpoint from {ckpt}.')
-                if self.ddp:
-                    dist.barrier()  # make sure that all processes load the model before optimizing it
-                    map_location = {'cuda:%d' % 0: device}
-                else:
-                    map_location = self.rank
-                state_dict = torch.load(ckpt, map_location=map_location, weights_only=False)
-                model.load_state_dict(state_dict['state_dict'])
-                if 'epoch' in state_dict:
-                    self.start_epoch = state_dict['epoch']
-                if 'step' in state_dict:
-                    self.start_step = state_dict['step']
-                log('Model with {} parameters loaded from checkpoint.'.format(capacity(model)[1]))
-                if 'epoch' in state_dict and 'step' in state_dict:
-                    log('Resuming from epoch {}, step {}.'.format(self.start_epoch, self.start_step))
 
         self._is_ghn = isinstance(model, GHN) or (hasattr(model, 'module') and isinstance(model.module, GHN))
         if self.ddp:
@@ -417,7 +406,6 @@ class Trainer:
             loss = nan_loss
 
             print(traceback.format_exc())
-            print(traceback.print_exc())
             if not self.ddp:
                 raise
 
@@ -661,9 +649,7 @@ class Trainer:
             print('error', 'rank ', self.rank, type(err), err, getattr(graphs, 'net_args', '') if graphs is not None else '')
             loss = nan_loss
 
-            import traceback
             print(traceback.format_exc())
-            print(traceback.print_exc())
             if not self.ddp:
                 raise
 
